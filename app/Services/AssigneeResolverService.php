@@ -1,0 +1,184 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\TblApprovalGroup;
+use App\Models\TblFlowStep;
+use App\Models\TblPosition;
+use App\Models\TblRole;
+use App\Models\TblUser;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+
+/**
+ * AssigneeResolverService
+ *
+ * Menentukan kandidat approver berdasarkan tblstep_assignee_rule.
+ *
+ * assignee_type:
+ *   USER         → assignee_value = user_ref
+ *   ROLE         → assignee_value = role_code; ambil semua user aktif dengan role tsb
+ *   GROUP        → assignee_value = group_code
+ *   POSITION     → assignee_value = position_code
+ *   SUPERIOR     → dari idtbluser_superior di tbluser (submitter punya atasan)
+ *   FIELD_USER   → assignee_value = nama field di context_json yang berisi user_ref
+ *   FIELD_POSITION → assignee_value = field di context_json yang berisi position_code
+ *   JOBTITLE     → assignee_value = jobtitleid dari db_master.ms_jobtitle;
+ *                   lookup employeeno dari db_master.tbemployeeit lalu cocokkan ke tbluser
+ *   API_RESOLVER → assignee_value = URL endpoint; GET dengan context param
+ *
+ * Return: Collection<TblUser>
+ */
+class AssigneeResolverService
+{
+    public function __construct(
+        private ConditionEvaluatorService $condEval,
+    ) {}
+
+    /**
+     * Resolve kandidat approver untuk step + context tertentu.
+     *
+     * @param TblFlowStep $step        APPROVAL node
+     * @param array       $context     context_json dari approval request
+     * @param int|null    $submitterId idtbluser submitter (untuk SUPERIOR)
+     * @return Collection<TblUser>
+     */
+    public function resolve(TblFlowStep $step, array $context, ?int $submitterId = null): Collection
+    {
+        $candidates = collect();
+        $rules = $step->activeAssigneeRules()->orderBy('priority_no')->get();
+
+        foreach ($rules as $rule) {
+            // Evaluasi condition rule sendiri (kalau ada)
+            if ($rule->condition_json && ! $this->condEval->evaluate($rule->condition_json, $context)) {
+                continue;
+            }
+
+            $users = $this->resolveRule($rule->assignee_type, $rule->assignee_value, $context, $submitterId);
+            $candidates = $candidates->merge($users);
+        }
+
+        return $candidates->unique('idtbluser')->values();
+    }
+
+    private function resolveRule(string $type, ?string $value, array $context, ?int $submitterId): Collection
+    {
+        return match ($type) {
+            'USER'           => $this->resolveUser($value),
+            'ROLE'           => $this->resolveRole($value),
+            'GROUP'          => $this->resolveGroup($value),
+            'POSITION'       => $this->resolvePosition($value),
+            'SUPERIOR'       => $this->resolveSuperior($submitterId),
+            'FIELD_USER'     => $this->resolveFieldUser($value, $context),
+            'FIELD_POSITION' => $this->resolveFieldPosition($value, $context),
+            'JOBTITLE'       => $this->resolveJobTitle($value),
+            'API_RESOLVER'   => $this->resolveApi($value, $context),
+            default          => collect(),
+        };
+    }
+
+    private function resolveUser(?string $userRef): Collection
+    {
+        if (! $userRef) return collect();
+        $user = TblUser::where('user_ref', $userRef)->where('is_active', 1)->first();
+        return $user ? collect([$user]) : collect();
+    }
+
+    private function resolveRole(?string $roleCode): Collection
+    {
+        if (! $roleCode) return collect();
+        return TblUser::where('is_active', 1)
+            ->whereHas('roles', fn($q) => $q->where('role_code', $roleCode)->where('is_active', 1))
+            ->get();
+    }
+
+    private function resolveGroup(?string $groupCode): Collection
+    {
+        if (! $groupCode) return collect();
+        $group = TblApprovalGroup::where('group_code', $groupCode)->where('is_active', 1)->first();
+        if (! $group) return collect();
+
+        return TblUser::where('is_active', 1)
+            ->whereIn('idtbluser',
+                $group->members()->where('is_active', 1)->pluck('idtbluser')
+            )->get();
+    }
+
+    private function resolvePosition(?string $posCode): Collection
+    {
+        if (! $posCode) return collect();
+        return TblUser::where('is_active', 1)
+            ->whereHas('position', fn($q) => $q->where('position_code', $posCode))
+            ->get();
+    }
+
+    private function resolveSuperior(?int $submitterId): Collection
+    {
+        if (! $submitterId) return collect();
+        $submitter = TblUser::find($submitterId);
+        if (! $submitter || ! $submitter->idtbluser_superior) return collect();
+        $superior = TblUser::where('idtbluser', $submitter->idtbluser_superior)->where('is_active', 1)->first();
+        return $superior ? collect([$superior]) : collect();
+    }
+
+    private function resolveFieldUser(?string $field, array $context): Collection
+    {
+        if (! $field) return collect();
+        $userRef = data_get($context, $field);
+        if (! $userRef) return collect();
+        return $this->resolveUser($userRef);
+    }
+
+    private function resolveFieldPosition(?string $field, array $context): Collection
+    {
+        if (! $field) return collect();
+        $posCode = data_get($context, $field);
+        if (! $posCode) return collect();
+        return $this->resolvePosition($posCode);
+    }
+
+    /**
+     * JOBTITLE: Lookup user berdasarkan jobtitleid dari db_master.tbemployeeit.
+     * employeeno di tbemployeeit = user_ref di tbluser approval center.
+     * Keuntungan: saat ganti pejabat, cukup update di HR system saja.
+     */
+    private function resolveJobTitle(?string $jobTitleId): Collection
+    {
+        if (! $jobTitleId) return collect();
+        try {
+            $rows = \Illuminate\Support\Facades\DB::select(
+                "SELECT employeeno FROM db_master.tbemployeeit WHERE jobtitleid = ? AND activestatus = 1",
+                [$jobTitleId]
+            );
+            if (empty($rows)) {
+                Log::warning("AssigneeResolver JOBTITLE: tidak ada employee aktif untuk jobtitleid={$jobTitleId}");
+                return collect();
+            }
+            $npks = array_map(fn($r) => $r->employeeno, $rows);
+            return TblUser::where("is_active", 1)->whereIn("user_ref", $npks)->get();
+        } catch (\Throwable $e) {
+            Log::warning("AssigneeResolver JOBTITLE({$jobTitleId}): {$e->getMessage()}");
+            return collect();
+        }
+    }
+
+    /**
+     * API_RESOLVER: POST ke endpoint dengan context_json, expect
+     * {"user_refs": ["USER1","USER2"]}
+     */
+    private function resolveApi(?string $endpoint, array $context): Collection
+    {
+        if (! $endpoint) return collect();
+        try {
+            $response = Http::timeout(5)->post($endpoint, ['context' => $context]);
+            if ($response->ok()) {
+                $refs = $response->json('user_refs', []);
+                return TblUser::where('is_active', 1)->whereIn('user_ref', $refs)->get();
+            }
+        } catch (\Throwable $e) {
+            Log::warning("AssigneeResolverService API_RESOLVER failed: {$e->getMessage()}");
+        }
+        return collect();
+    }
+}

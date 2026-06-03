@@ -1,0 +1,161 @@
+<?php
+
+namespace App\Http\Controllers\Web;
+
+use App\Http\Controllers\Controller;
+use App\Jobs\SendCallbackJob;
+use App\Models\TblActionLog;
+use App\Models\TblAuditEvent;
+use App\Models\TblCallbackOutbox;
+use App\Models\TblIntegrationMessageLog;
+use App\Models\TblSourceApp;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\View\View;
+
+/**
+ * AuditController
+ *
+ * Semua halaman read-only untuk audit & observability:
+ *  - actionLog()       : tblaction_log  — keputusan approver
+ *  - auditEvent()      : tblaudit_event — perubahan master data
+ *  - integrationLog()  : tblintegration_message_log — request/response API
+ *  - callbackOutbox()  : tblcallback_outbox — outbound callback ke source app
+ *  - retryCallback()   : re-dispatch SendCallbackJob untuk item FAILED
+ */
+class AuditController extends Controller
+{
+    /* ------------------------------------------------------------------ */
+    public function actionLog(Request $request): View
+    {
+        $q = TblActionLog::with(['approvalRequest', 'actor']);
+
+        if ($s = trim((string) $request->input('search'))) {
+            $q->where(fn($w) => $w->where('actor_ref', 'like', "%$s%")
+                                  ->orWhere('action_code', 'like', "%$s%")
+                                  ->orWhereHas('approvalRequest', fn($aq) =>
+                                      $aq->where('source_request_no', 'like', "%$s%")
+                                  ));
+        }
+        if ($request->filled('action_code')) {
+            $q->where('action_code', $request->input('action_code'));
+        }
+        if ($request->filled('date_from')) {
+            $q->whereDate('created_at', '>=', $request->input('date_from'));
+        }
+        if ($request->filled('date_to')) {
+            $q->whereDate('created_at', '<=', $request->input('date_to'));
+        }
+
+        $items = $q->orderByDesc('created_at')->paginate(30)->withQueryString();
+        $actionCodes = TblActionLog::select('action_code')->distinct()->pluck('action_code');
+
+        return view('audit.action_log', compact('items', 'actionCodes'));
+    }
+
+    /* ------------------------------------------------------------------ */
+    public function auditEvent(Request $request): View
+    {
+        $q = TblAuditEvent::query();
+
+        if ($s = trim((string) $request->input('search'))) {
+            $q->where(fn($w) => $w->where('entity_type', 'like', "%$s%")
+                                  ->orWhere('event_code', 'like', "%$s%")
+                                  ->orWhere('actor_ref', 'like', "%$s%")
+                                  ->orWhere('event_message', 'like', "%$s%"));
+        }
+        if ($request->filled('event_code')) {
+            $q->where('event_code', $request->input('event_code'));
+        }
+        if ($request->filled('entity_type')) {
+            $q->where('entity_type', $request->input('entity_type'));
+        }
+        if ($request->filled('date_from')) {
+            $q->whereDate('created_at', '>=', $request->input('date_from'));
+        }
+        if ($request->filled('date_to')) {
+            $q->whereDate('created_at', '<=', $request->input('date_to'));
+        }
+
+        $items       = $q->orderByDesc('created_at')->paginate(30)->withQueryString();
+        $eventCodes  = TblAuditEvent::select('event_code')->distinct()->orderBy('event_code')->pluck('event_code');
+        $entityTypes = TblAuditEvent::select('entity_type')->distinct()->orderBy('entity_type')->pluck('entity_type');
+
+        return view('audit.audit_event', compact('items', 'eventCodes', 'entityTypes'));
+    }
+
+    /* ------------------------------------------------------------------ */
+    public function integrationLog(Request $request): View
+    {
+        $q = TblIntegrationMessageLog::with('sourceApp');
+
+        if ($s = trim((string) $request->input('search'))) {
+            $q->where(fn($w) => $w->where('endpoint', 'like', "%$s%")
+                                  ->orWhereHas('sourceApp', fn($sq) =>
+                                      $sq->where('app_code', 'like', "%$s%")
+                                  ));
+        }
+        if ($request->filled('direction')) {
+            $q->where('direction', $request->input('direction'));
+        }
+        if ($request->filled('idtblsource_app')) {
+            $q->where('idtblsource_app', (int) $request->input('idtblsource_app'));
+        }
+        if ($request->filled('date_from')) {
+            $q->whereDate('created_at', '>=', $request->input('date_from'));
+        }
+        if ($request->filled('date_to')) {
+            $q->whereDate('created_at', '<=', $request->input('date_to'));
+        }
+
+        $items      = $q->orderByDesc('created_at')->paginate(30)->withQueryString();
+        $sourceApps = TblSourceApp::orderBy('app_code')->get();
+
+        return view('audit.integration_log', compact('items', 'sourceApps'));
+    }
+
+    /* ------------------------------------------------------------------ */
+    public function callbackOutbox(Request $request): View
+    {
+        $q = TblCallbackOutbox::with(['approvalRequest', 'sourceApp']);
+
+        if ($request->filled('status')) {
+            $q->where('status', $request->input('status'));
+        }
+        if ($request->filled('idtblsource_app')) {
+            $q->where('idtblsource_app', (int) $request->input('idtblsource_app'));
+        }
+        if ($request->filled('date_from')) {
+            $q->whereDate('created_at', '>=', $request->input('date_from'));
+        }
+        if ($request->filled('date_to')) {
+            $q->whereDate('created_at', '<=', $request->input('date_to'));
+        }
+
+        $items      = $q->orderByDesc('created_at')->paginate(30)->withQueryString();
+        $sourceApps = TblSourceApp::orderBy('app_code')->get();
+        $statuses   = ['PENDING', 'SENT', 'FAILED', 'DEAD'];
+
+        return view('audit.callback_outbox', compact('items', 'sourceApps', 'statuses'));
+    }
+
+    /* ------------------------------------------------------------------ */
+    public function retryCallback(int $idtblcallback_outbox): RedirectResponse
+    {
+        $outbox = TblCallbackOutbox::findOrFail($idtblcallback_outbox);
+
+        if (! in_array($outbox->status, ['FAILED', 'DEAD'], true)) {
+            return back()->with('error', 'Hanya callback FAILED atau DEAD yang bisa di-retry.');
+        }
+
+        // Reset agar bisa diproses ulang
+        $outbox->status       = 'PENDING';
+        $outbox->next_retry_at = now();
+        $outbox->save();
+
+        // Dispatch langsung (manual retry)
+        SendCallbackJob::dispatch($outbox);
+
+        return back()->with('status', "Callback #{$outbox->idtblcallback_outbox} akan diproses ulang.");
+    }
+}
