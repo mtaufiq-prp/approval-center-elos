@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\TblActionLog;
 use App\Models\TblApprovalRequest;
+use App\Models\TblCallbackOutbox;
 use App\Models\TblFlowStep;
 use App\Models\TblFlowTransition;
 use App\Models\TblFlowVersion;
@@ -549,10 +550,57 @@ class FlowEngineService
             ->where('token_status', TblProcessToken::STATUS_ACTIVE)
             ->update(['token_status' => TblProcessToken::STATUS_COMPLETED, 'completed_at' => now()]);
 
+        // Transactional outbox: catat event callback ke source app (#81).
+        // Dibuat dalam transaksi keputusan yang sama → konsisten dengan status final.
+        $this->enqueueCallback($request);
+
         $this->logRoute($request->idtblapproval_request, $instance->idtblprocess_instance,
             null, null,
             TblProcessRouteLog::EV_PROCESS_COMPLETED, null, $finalStatus, null,
             $reason);
+    }
+
+    /**
+     * Map request_status final → event_type callback (ENUM tblcallback_outbox).
+     */
+    private function callbackEventType(string $requestStatus): string
+    {
+        return match (strtoupper($requestStatus)) {
+            'APPROVED'  => 'APPROVED',
+            'REJECTED'  => 'REJECTED',
+            'RETURNED'  => 'RETURNED',
+            'CANCELLED' => 'CANCELLED',
+            default     => 'ERROR',
+        };
+    }
+
+    /**
+     * Buat baris outbox callback bila request punya callback_url.
+     * Scheduler/worker yang mengirim (lihat ProcessCallbackOutboxJob + SendCallbackJob).
+     */
+    private function enqueueCallback(TblApprovalRequest $request): void
+    {
+        if (empty($request->callback_url)) {
+            return; // source app tidak meminta callback
+        }
+
+        TblCallbackOutbox::create([
+            'idtblapproval_request' => $request->idtblapproval_request,
+            'idtblsource_app'       => $request->idtblsource_app,
+            'event_type'            => $this->callbackEventType($request->request_status),
+            'target_url'            => $request->callback_url,
+            'payload_json'          => [
+                'event_type'          => $this->callbackEventType($request->request_status),
+                'approval_request_id' => $request->idtblapproval_request,
+                'source_request_id'   => $request->source_request_id,
+                'source_request_no'   => $request->source_request_no,
+                'request_status'      => $request->request_status,
+                'decided_at'          => now()->toIso8601String(),
+            ],
+            'status'      => TblCallbackOutbox::STATUS_PENDING,
+            'retry_count' => 0,
+            'next_retry_at' => now(),
+        ]);
     }
 
     private function findStartStep(TblFlowVersion $version): ?TblFlowStep

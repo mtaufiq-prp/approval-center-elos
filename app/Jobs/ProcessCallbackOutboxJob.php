@@ -19,9 +19,9 @@ class ProcessCallbackOutboxJob implements ShouldQueue
 
     public function handle(): void
     {
-        TblCallbackOutbox::whereIn('status', ['PENDING', 'RETRY'])
-            ->where('retry_count', '<', 5)
-            ->orderBy('created_at')
+        // Ambil baris yang siap (PENDING/FAILED & next_retry_at <= now), urut next_retry_at.
+        // SendCallbackJob ShouldBeUnique per id → aman dari dispatch ganda (#86).
+        TblCallbackOutbox::readyForDispatch()
             ->limit(50)
             ->get()
             ->each(fn($cb) => SendCallbackJob::dispatch($cb->idtblcallback_outbox));

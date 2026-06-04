@@ -54,6 +54,7 @@ class TblApprovalRequest extends Model
         'payload_json',
         'idtblflow_version_selected',
         'idtblflow_step_current',
+        'idtbluser_submitter',
         'submitted_at',
         'completed_at',
     ];

@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\TblApprovalRequest;
 use App\Models\TblIntegrationMessageLog;
-use App\Services\AuditTrailService;
 use App\Services\FlowEngineService;
 use App\Services\PayloadEnrichmentService;
 use App\Services\RoutingRuleService;
@@ -36,6 +35,7 @@ class ApprovalSubmitController extends Controller
 
         $data = $request->validate([
             'doc_ref'             => ['required', 'string', 'max:100'],
+            'doc_no'              => ['nullable', 'string', 'max:100'],
             'idtbldocument_type'  => ['required', 'integer'],
             'callback_url'        => ['nullable', 'url', 'max:255'],
             'context_json'        => ['required', 'array'],
@@ -51,27 +51,44 @@ class ApprovalSubmitController extends Controller
             'priority'            => ['nullable', 'string', 'max:20'],
         ]);
 
-        // Idempotency check
+        // #104: pastikan document type milik source_app klien terautentikasi
+        $docTypeOwned = \App\Models\TblDocumentType::where('idtbldocument_type', (int) $data['idtbldocument_type'])
+            ->where('idtblsource_app', $client->idtblsource_app)
+            ->exists();
+        if (! $docTypeOwned) {
+            return response()->json([
+                'success' => false,
+                'error'   => 'INVALID_DOCUMENT_TYPE',
+                'message' => 'Document type tidak dikenal untuk source app ini.',
+            ], 422);
+        }
+
+        // #92: idempotency check di-scope ke source_app (unique komposit di DB)
         if ($idempKey = $data['idempotency_key'] ?? null) {
-            $existing = TblApprovalRequest::where('idempotency_key', $idempKey)->first();
+            $existing = TblApprovalRequest::where('idtblsource_app', $client->idtblsource_app)
+                ->where('idempotency_key', $idempKey)->first();
             if ($existing) {
-                return response()->json([
-                    'success'             => true,
-                    'idempotent'          => true,
-                    'approval_request_id' => $existing->idtblapproval_request,
-                    'status'              => $existing->request_status,
-                    'message'             => 'Request sudah diproses (idempotent).',
-                ]);
+                return $this->idempotentResponse($existing);
             }
         }
 
+        // #93: retry doc_ref yang sama (tanpa idempotency_key) → balasan idempoten, bukan 422
+        $dup = TblApprovalRequest::where('idtblsource_app', $client->idtblsource_app)
+            ->where('idtbldocument_type', (int) $data['idtbldocument_type'])
+            ->where('source_request_id', $data['doc_ref'])
+            ->first();
+        if ($dup) {
+            return $this->idempotentResponse($dup);
+        }
+
         $msgLog = TblIntegrationMessageLog::create([
-            'idtblapproval_request' => null,
-            'idtblapi_client'       => $client->idtblapi_client,
-            'direction'             => 'INBOUND',
-            'message_type'          => 'APPROVAL_SUBMIT',
-            'payload_json'          => $data,
-            'status'                => 'RECEIVED',
+            'idtblsource_app'    => $client->idtblsource_app,
+            'direction'          => 'INBOUND',
+            'endpoint'           => $request->path(),
+            'http_method'        => $request->method(),
+            'request_body_json'  => $data,
+            'status'             => 'PENDING',
+            'idempotency_key'    => $data['idempotency_key'] ?? null,
         ]);
 
         try {
@@ -102,6 +119,7 @@ class ApprovalSubmitController extends Controller
                     'idtblsource_app'           => $client->idtblsource_app,
                     'idtbldocument_type'         => $data['idtbldocument_type'],
                     'source_request_id'          => $data['doc_ref'],
+                    'source_request_no'          => $data['doc_no'] ?? $data['doc_ref'],
                     'idtblflow_version_selected' => $version->idtblflow_version,
                     'callback_url'               => $data['callback_url']
                                                     ?? optional($client->sourceApp)->default_callback_url,
@@ -128,26 +146,48 @@ class ApprovalSubmitController extends Controller
 
             $msgLog->update([
                 'idtblapproval_request' => $result->idtblapproval_request,
-                'status'                => 'PROCESSED',
+                'status'                => 'SUCCESS',
             ]);
 
             return response()->json([
                 'success'             => true,
+                'error_code'          => null,
                 'approval_request_id' => $result->idtblapproval_request,
                 'status'              => $result->request_status,
                 'message'             => 'Approval request berhasil disubmit.',
-                '_computed'           => $result->context_json['_computed'] ?? null,
+                'data'                => ['_computed' => $result->context_json['_computed'] ?? null],
             ], 201);
 
         } catch (\Throwable $e) {
             Log::error("ApprovalSubmit: {$e->getMessage()}", ['trace' => $e->getTraceAsString()]);
-            $msgLog->update(['status' => 'ERROR', 'error_message' => $e->getMessage()]);
+            $msgLog->update(['status' => 'FAILED', 'error_message' => mb_substr($e->getMessage(), 0, 1000)]);
+
+            // #100: bedakan kesalahan konfigurasi routing (klien) vs fault server
+            $isRouting = $e instanceof \RuntimeException
+                && str_contains($e->getMessage(), 'routing rule');
             return response()->json([
-                'success' => false,
-                'error'   => 'SUBMIT_ERROR',
-                'message' => 'Terjadi kesalahan saat memproses request. Hubungi administrator.',
-            ], 422);
+                'success'    => false,
+                'error_code' => $isRouting ? 'NO_ROUTING_RULE' : 'INTERNAL_ERROR',
+                'message'    => $isRouting
+                    ? 'Tidak ada flow approval yang cocok untuk request ini.'
+                    : 'Terjadi kesalahan saat memproses request. Hubungi administrator.',
+            ], $isRouting ? 422 : 500);
         }
+    }
+
+    /**
+     * Balasan idempoten standar untuk request yang sudah ada (#92, #93).
+     */
+    private function idempotentResponse(TblApprovalRequest $existing): JsonResponse
+    {
+        return response()->json([
+            'success'             => true,
+            'idempotent'          => true,
+            'error_code'          => null,
+            'approval_request_id' => $existing->idtblapproval_request,
+            'status'              => $existing->request_status,
+            'message'             => 'Request sudah diproses (idempotent).',
+        ]);
     }
 }
 

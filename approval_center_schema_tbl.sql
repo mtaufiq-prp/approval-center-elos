@@ -257,8 +257,8 @@ CREATE TABLE tblflow_step (
 CREATE TABLE tblstep_assignee_rule (
     idtblstep_assignee_rule BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     idtblflow_step BIGINT UNSIGNED NOT NULL,
-    assignee_type ENUM('USER','ROLE','GROUP','POSITION','SUPERIOR','FIELD_USER','FIELD_POSITION','API_RESOLVER') NOT NULL,
-    assignee_value VARCHAR(150) NULL COMMENT 'user_ref / role_code / group_code / position_code / nama field pada context_json',
+    assignee_type ENUM('USER','ROLE','GROUP','POSITION','SUPERIOR','FIELD_USER','FIELD_POSITION','API_RESOLVER','JOBTITLE') NOT NULL,
+    assignee_value VARCHAR(150) NULL COMMENT 'user_ref / role_code / group_code / position_code / jobtitleid / nama field pada context_json',
     priority_no INT NOT NULL DEFAULT 1,
     condition_json JSON NULL,
     is_required TINYINT(1) NOT NULL DEFAULT 1,
@@ -337,6 +337,7 @@ CREATE TABLE tblapproval_request (
     payload_json JSON NOT NULL COMMENT 'Payload lengkap dari aplikasi asal untuk ditampilkan di approval center',
     idtblflow_version_selected BIGINT UNSIGNED NULL,
     idtblflow_step_current BIGINT UNSIGNED NULL,
+    idtbluser_submitter BIGINT UNSIGNED NULL COMMENT 'User pengaju (untuk resolusi assignee SUPERIOR)',
     submitted_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     completed_at DATETIME(3) NULL,
     created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),

@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\TblCallbackOutbox;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
@@ -14,76 +15,142 @@ use Illuminate\Support\Facades\Log;
 /**
  * SendCallbackJob
  *
- * Kirim callback outbox ke URL tujuan dengan retry logic.
- * Retry up to 5x dengan exponential backoff (1, 2, 4, 8, 16 menit).
+ * Mengirim satu baris outbox callback ke target_url source app.
+ * - ShouldBeUnique per callbackId → cegah dua job paralel untuk baris yang sama (#86).
+ * - Status & kolom selaras schema tblcallback_outbox (#82).
+ * - Backoff via next_retry_at; scheduler (ProcessCallbackOutboxJob) yang men-dispatch
+ *   ulang saat next_retry_at <= now. Job ini TIDAK self-release agar tidak dobel (#86).
+ * - failed() / habis retry → status DEAD untuk tindakan manual admin (#98).
+ * - SSRF guard menolak loopback + rentang privat/link-local/metadata (#109).
  */
-class SendCallbackJob implements ShouldQueue
+class SendCallbackJob implements ShouldQueue, ShouldBeUnique
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public int $tries   = 5;
+    public int $tries   = 1;   // retry diatur via outbox.next_retry_at, bukan queue retry
     public int $timeout = 30;
 
     public function __construct(private int $callbackId) {}
 
+    /** Kunci unik agar tidak ada dua job untuk baris outbox yang sama. */
+    public function uniqueId(): string
+    {
+        return (string) $this->callbackId;
+    }
+
+    public function uniqueFor(): int
+    {
+        return 120;
+    }
+
     public function handle(): void
     {
         $cb = TblCallbackOutbox::find($this->callbackId);
-        if (! $cb || $cb->status === 'SUCCESS') return;
+        if (! $cb || in_array($cb->status, [TblCallbackOutbox::STATUS_SENT, TblCallbackOutbox::STATUS_DEAD], true)) {
+            return; // sudah selesai atau menyerah
+        }
 
-        // SSRF guard: tolak URL yang mengarah ke loopback
-        $host = strtolower(parse_url($cb->callback_url, PHP_URL_HOST) ?? '');
-        if (in_array($host, ['localhost', '127.0.0.1', '::1', '0.0.0.0'], true) || str_ends_with($host, '.local')) {
-            Log::error("SendCallback #{$this->callbackId}: callback_url mengarah ke loopback ({$host}), ditolak.");
-            $cb->status     = 'FAILED';
-            $cb->last_error = 'SSRF_BLOCKED: loopback URL tidak diizinkan.';
+        // SSRF guard: tolak loopback, rentang privat, link-local, metadata.
+        if ($blocked = $this->blockedReason($cb->target_url)) {
+            Log::error("SendCallback #{$this->callbackId}: target_url ditolak ({$blocked}).");
+            $cb->status             = TblCallbackOutbox::STATUS_DEAD;
+            $cb->last_error_message = "SSRF_BLOCKED: {$blocked}";
             $cb->save();
             return;
         }
 
         try {
-            // Buat HMAC signature untuk callback agar penerima bisa verifikasi keaslian
-            $timestamp   = (string) time();
-            $bodyJson    = json_encode($cb->payload_json ?? [], JSON_UNESCAPED_UNICODE);
-            $nonce       = bin2hex(random_bytes(8));
-            $cbSecret    = config('app.callback_hmac_secret', config('app.key'));
-            $signature   = hash_hmac('sha256', $timestamp . "\n" . $nonce . "\n" . $bodyJson, $cbSecret);
+            // HMAC signature agar penerima bisa memverifikasi keaslian callback.
+            $timestamp = (string) time();
+            $nonce     = bin2hex(random_bytes(8));
+            $bodyJson  = json_encode($cb->payload_json ?? [], JSON_UNESCAPED_UNICODE);
+            $secret    = config('app.callback_hmac_secret') ?: config('app.key');
+            $signature = hash_hmac('sha256', $timestamp . "\n" . $nonce . "\n" . $bodyJson, $secret);
 
             $response = Http::timeout(15)
                 ->withHeaders([
-                    'Content-Type'       => 'application/json',
-                    'X-Source'           => 'ApprovalCenter',
-                    'X-Callback-Ts'      => $timestamp,
-                    'X-Callback-Nonce'   => $nonce,
-                    'X-Callback-Sig'     => $signature,
+                    'Content-Type'     => 'application/json',
+                    'X-Source'         => 'ApprovalCenter',
+                    'X-Callback-Ts'    => $timestamp,
+                    'X-Callback-Nonce' => $nonce,
+                    'X-Callback-Sig'   => $signature,
                 ])
-                ->post($cb->callback_url, $cb->payload_json ?? []);
+                ->post($cb->target_url, $cb->payload_json ?? []);
 
             if ($response->successful()) {
-                $cb->status         = 'SUCCESS';
-                $cb->sent_at        = now();
-                $cb->http_status    = $response->status();
-                $cb->response_body  = mb_substr($response->body(), 0, 1000);
+                $cb->status             = TblCallbackOutbox::STATUS_SENT;
+                $cb->sent_at            = now();
+                $cb->last_response_code = $response->status();
+                $cb->last_response_body = mb_substr($response->body(), 0, 1000);
+                $cb->last_error_message = null;
                 $cb->save();
                 return;
             }
 
-            throw new \RuntimeException("HTTP {$response->status()}: " . mb_substr($response->body(), 0, 200));
+            $cb->last_response_code = $response->status();
+            $cb->last_response_body = mb_substr($response->body(), 0, 1000);
+            $this->scheduleRetryOrDead($cb, "HTTP {$response->status()}");
 
         } catch (\Throwable $e) {
-            $attempts = $this->attempts();
-            Log::warning("SendCallback #{$this->callbackId} attempt {$attempts} failed: {$e->getMessage()}");
+            $this->scheduleRetryOrDead($cb, $e->getMessage());
+        }
+    }
 
-            $cb->status        = $attempts >= $this->tries ? 'FAILED' : 'RETRY';
-            $cb->retry_count   = $attempts;
-            $cb->last_error    = $e->getMessage();
+    /**
+     * Tandai FAILED + jadwalkan retry via next_retry_at (exponential backoff),
+     * atau DEAD bila sudah mencapai max_retry.
+     */
+    private function scheduleRetryOrDead(TblCallbackOutbox $cb, string $error): void
+    {
+        $cb->retry_count        = (int) $cb->retry_count + 1;
+        $cb->last_error_message = mb_substr($error, 0, 1000);
+
+        if ($cb->retry_count >= (int) ($cb->max_retry ?: 10)) {
+            $cb->status        = TblCallbackOutbox::STATUS_DEAD;
+            $cb->next_retry_at = null;
+            Log::warning("SendCallback #{$this->callbackId} DEAD setelah {$cb->retry_count} percobaan: {$error}");
+        } else {
+            $cb->status        = TblCallbackOutbox::STATUS_FAILED;
+            // backoff: 1,2,4,8,... menit (cap 60 menit)
+            $delayMin          = min(60, 2 ** max(0, $cb->retry_count - 1));
+            $cb->next_retry_at = now()->addMinutes($delayMin);
+            Log::warning("SendCallback #{$this->callbackId} gagal (retry {$cb->retry_count}, +{$delayMin}m): {$error}");
+        }
+        $cb->save();
+    }
+
+    /** Dipanggil Laravel saat job benar-benar gagal (exception tak tertangani). */
+    public function failed(\Throwable $e): void
+    {
+        $cb = TblCallbackOutbox::find($this->callbackId);
+        if ($cb && ! in_array($cb->status, [TblCallbackOutbox::STATUS_SENT, TblCallbackOutbox::STATUS_DEAD], true)) {
+            $cb->status             = TblCallbackOutbox::STATUS_DEAD;
+            $cb->last_error_message = mb_substr('JOB_FAILED: ' . $e->getMessage(), 0, 1000);
             $cb->save();
+        }
+    }
 
-            if ($attempts < $this->tries) {
-                $this->release(60 * (2 ** ($attempts - 1))); // backoff: 1,2,4,8,16 menit
-            } else {
-                $this->fail($e);
+    /**
+     * Kembalikan alasan blokir bila host target tidak aman (loopback/privat/link-local/
+     * metadata), atau null bila aman.
+     */
+    private function blockedReason(?string $url): ?string
+    {
+        $host = strtolower((string) parse_url((string) $url, PHP_URL_HOST));
+        if ($host === '') return 'invalid host';
+        if (in_array($host, ['localhost', '0.0.0.0', '::1'], true)) return 'loopback';
+        if (str_ends_with($host, '.local') || str_ends_with($host, '.internal')) return 'internal TLD';
+
+        // Resolve ke IP (IPv4) lalu cek rentang privat/link-local/loopback.
+        $ip = filter_var($host, FILTER_VALIDATE_IP) ? $host : gethostbyname($host);
+        if (filter_var($ip, FILTER_VALIDATE_IP)) {
+            if (! filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+                return "private/reserved IP ({$ip})";
+            }
+            if (str_starts_with($ip, '169.254.') || $ip === '169.254.169.254') {
+                return 'link-local/metadata IP';
             }
         }
+        return null;
     }
 }
