@@ -58,10 +58,69 @@ class AssigneeResolverService
             }
 
             $users = $this->resolveRule($rule->assignee_type, $rule->assignee_value, $context, $submitterId);
+            // Tandai sumber resolusi per kandidat untuk audit/provenance (#113).
+            // Map ke ENUM tbltask_candidate.candidate_source yang valid.
+            $source = $this->candidateSourceFor($rule->assignee_type);
+            foreach ($users as $u) {
+                if (! $u->getAttribute('_candidate_source')) {
+                    $u->setAttribute('_candidate_source', $source);
+                }
+            }
             $candidates = $candidates->merge($users);
         }
 
+        $candidates = $candidates->unique('idtbluser')->values();
+
+        // Substitusi delegasi aktif: tambahkan delegate sebagai kandidat (#96).
+        // Satu hop saja untuk mencegah loop A->B->A.
+        return $this->applyDelegations($candidates);
+    }
+
+    /**
+     * Untuk tiap kandidat yang sedang mendelegasikan (delegator), tambahkan
+     * delegate aktif sebagai kandidat. Delegate ditandai source DELEGATION.
+     *
+     * @param Collection<int,TblUser> $candidates
+     * @return Collection<int,TblUser>
+     */
+    private function applyDelegations(Collection $candidates): Collection
+    {
+        $delegatorIds = $candidates->pluck('idtbluser')->all();
+        if (empty($delegatorIds)) {
+            return $candidates;
+        }
+
+        $delegations = \App\Models\TblDelegation::activeAt()
+            ->whereIn('idtbluser_delegator', $delegatorIds)
+            ->get();
+
+        foreach ($delegations as $d) {
+            // Hindari loop: jangan tambahkan delegate yang juga sudah jadi kandidat
+            if ($candidates->firstWhere('idtbluser', $d->idtbluser_delegate)) {
+                continue;
+            }
+            $delegate = TblUser::where('idtbluser', $d->idtbluser_delegate)
+                ->where('is_active', 1)->first();
+            if ($delegate) {
+                $delegate->setAttribute('_candidate_source', 'DELEGATION');
+                $candidates->push($delegate);
+            }
+        }
+
         return $candidates->unique('idtbluser')->values();
+    }
+
+    /** Map assignee_type → ENUM tbltask_candidate.candidate_source. */
+    private function candidateSourceFor(string $assigneeType): string
+    {
+        return match ($assigneeType) {
+            'ROLE'                       => 'ROLE',
+            'GROUP'                      => 'GROUP',
+            'POSITION', 'FIELD_POSITION', 'JOBTITLE' => 'POSITION',
+            'SUPERIOR'                   => 'SUPERIOR',
+            'API_RESOLVER'               => 'API_RESOLVER',
+            default                      => 'DIRECT', // USER / FIELD_USER
+        };
     }
 
     private function resolveRule(string $type, ?string $value, array $context, ?int $submitterId): Collection

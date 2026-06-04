@@ -188,6 +188,11 @@ class FlowEngineService
                 TblProcessRouteLog::EV_EXIT_NODE, $currentNode->step_type, $actionCode, null,
                 "Task #{$task->idtbltask} diselesaikan: {$actionCode}");
 
+            // SEQUENTIAL belum didukung engine — perlakukan sebagai ANY, tapi catat (jangan diam-diam) (#97)
+            if (strtoupper((string) $currentNode->approval_mode) === 'SEQUENTIAL') {
+                Log::warning("FlowEngine: approval_mode SEQUENTIAL pada node '{$currentNode->node_code}' belum didukung; diperlakukan sebagai ANY.");
+            }
+
             // Cek approval_mode (ANY/ALL)
             if ($currentNode->approval_mode === 'ALL') {
                 $stillOpen = TblTask::where('idtblprocess_instance', $instance->idtblprocess_instance)
@@ -256,6 +261,18 @@ class FlowEngineService
                     return;
                 }
             }
+            // Tidak ada next edge eksplisit untuk REJECT → konsultasi reject_behavior (#95)
+            if (strtoupper((string) $actionCode) === 'REJECT') {
+                $behavior = strtoupper((string) ($node->reject_behavior ?? 'END_REJECTED'));
+                if ($behavior !== 'END_REJECTED') {
+                    // BACK_TO_* / rework belum didukung engine — fail-safe ke REJECTED, jangan diam-diam.
+                    Log::warning("FlowEngine: reject_behavior '{$behavior}' pada node '{$node->node_code}' belum didukung; fail-safe ke REJECTED.");
+                }
+                $this->completeProcess($instance, $request, 'REJECTED',
+                    "REJECT di '{$node->node_code}' (reject_behavior={$behavior}).");
+                return;
+            }
+
             // Tidak ada next node → derive status dari action (fail-safe, bukan fail-open)
             $this->completeProcess($instance, $request, $this->terminalStatusForAction($actionCode),
                 "Tidak ada next node dari APPROVAL '{$node->node_code}' action {$actionCode}.");
@@ -476,7 +493,7 @@ class FlowEngineService
             TblTaskCandidate::create([
                 'task_id'          => $task->idtbltask,
                 'idtbluser'        => $candidate->idtbluser,
-                'candidate_source' => 'DIRECT',
+                'candidate_source' => $candidate->getAttribute('_candidate_source') ?: 'DIRECT',
                 'priority_no'      => $seq,
                 'is_active'        => 1,
             ]);
