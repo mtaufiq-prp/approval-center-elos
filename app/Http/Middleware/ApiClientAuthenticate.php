@@ -6,6 +6,7 @@ use App\Models\TblApiClient;
 use App\Services\ApiClientSecretService;
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -32,9 +33,10 @@ class ApiClientAuthenticate
         $clientKey = $request->header('X-Client-Key');
         $timestamp = $request->header('X-Timestamp');
         $signature = $request->header('X-Signature');
+        $nonce     = $request->header('X-Nonce');
 
-        if (! $clientKey || ! $timestamp || ! $signature) {
-            return $this->deny('MISSING_HEADERS', 'X-Client-Key, X-Timestamp, X-Signature wajib ada.', $request);
+        if (! $clientKey || ! $timestamp || ! $signature || ! $nonce) {
+            return $this->deny('MISSING_HEADERS', 'X-Client-Key, X-Timestamp, X-Signature, X-Nonce wajib ada.', $request);
         }
 
         $client = TblApiClient::where('client_key', $clientKey)->first();
@@ -51,14 +53,21 @@ class ApiClientAuthenticate
             return $this->deny('TIMESTAMP_EXPIRED', 'Timestamp kadaluarsa (toleransi ±300s).', $request);
         }
 
-        // HMAC verify
+        // Nonce replay check — simpan nonce di cache selama 2× TOLERANCE
+        $nonceCacheKey = 'hmac_nonce:' . $clientKey . ':' . $nonce;
+        if (Cache::has($nonceCacheKey)) {
+            return $this->deny('REPLAY_DETECTED', 'Nonce sudah digunakan (replay attack terdeteksi).', $request);
+        }
+        Cache::put($nonceCacheKey, 1, self::TOLERANCE * 2);
+
+        // HMAC verify — sertakan nonce dalam signed string
         try {
             $plain = $this->secretService->decrypt($client->client_secret_hash);
         } catch (\Throwable) {
             return $this->deny('SECRET_ERROR', 'Gagal memproses secret.', $request);
         }
 
-        $expected = hash_hmac('sha256', $timestamp . "\n" . $request->getContent(), $plain);
+        $expected = hash_hmac('sha256', $timestamp . "\n" . $nonce . "\n" . $request->getContent(), $plain);
         if (! hash_equals($expected, $signature)) {
             return $this->deny('INVALID_SIGNATURE', 'Signature tidak valid.', $request);
         }

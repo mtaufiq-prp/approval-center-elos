@@ -28,20 +28,21 @@ class ApprovalCancelController extends Controller
             return response()->json(['success' => false, 'message' => 'Approval request tidak ditemukan.'], 404);
         }
 
-        if (in_array($req->status, ['APPROVED', 'REJECTED', 'CANCELLED'])) {
-            return response()->json(['success' => false, 'message' => "Tidak bisa cancel request yang sudah {$req->status}."], 422);
+        if (in_array($req->request_status, ['APPROVED', 'REJECTED', 'CANCELLED'])) {
+            return response()->json(['success' => false, 'message' => "Tidak bisa cancel request yang sudah {$req->request_status}."], 422);
         }
 
         DB::transaction(function () use ($req, $reason) {
             TblTask::where('idtblapproval_request', $req->idtblapproval_request)
-                ->where('task_status', 'PENDING')
+                ->whereIn('task_status', ['OPEN', 'CLAIMED'])
                 ->update(['task_status' => 'CANCELLED', 'completed_at' => now()]);
 
             TblProcessInstance::where('idtblapproval_request', $req->idtblapproval_request)
-                ->whereIn('status', ['RUNNING', 'PENDING'])
-                ->update(['status' => 'CANCELLED', 'completed_at' => now()]);
+                ->whereIn('instance_status', ['RUNNING'])
+                ->update(['instance_status' => 'CANCELLED', 'ended_at' => now()]);
 
-            $req->status = 'CANCELLED';
+            $req->request_status = 'CANCELLED';
+            $req->completed_at   = now();
             $req->save();
         });
 

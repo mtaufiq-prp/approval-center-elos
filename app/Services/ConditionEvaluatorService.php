@@ -112,9 +112,10 @@ class ConditionEvaluatorService
             'NOT_IN'   => is_array($value) && ! $this->inArray($actual, $value),
             'BETWEEN'  => is_array($value) && count($value) === 2
                           && is_numeric($actual)
+                          && is_numeric($value[0]) && is_numeric($value[1])
                           && (float) $actual >= (float) $value[0]
                           && (float) $actual <= (float) $value[1],
-            'CONTAINS' => is_string($actual) && str_contains(strtolower($actual), strtolower((string) $value)),
+            'CONTAINS' => is_string($actual) && is_string($value) && str_contains(strtolower($actual), strtolower($value)),
             'IS_NULL'     => $actual === null,
             'IS_NOT_NULL' => $actual !== null,
             default    => false,
@@ -167,9 +168,13 @@ class ConditionEvaluatorService
         $parts = explode('.', $field);
         $val   = $context;
         foreach ($parts as $part) {
-            if (! is_array($val) || ! array_key_exists($part, $val)) {
-                return null;
+            if (! is_array($val)) return null;
+            // Support "key[]" → ambil seluruh array (untuk ANY_IN/NONE_IN)
+            if (str_ends_with($part, '[]')) {
+                $key = substr($part, 0, -2);
+                return array_key_exists($key, $val) ? (array) $val[$key] : null;
             }
+            if (! array_key_exists($part, $val)) return null;
             $val = $val[$part];
         }
         return $val;
@@ -177,13 +182,12 @@ class ConditionEvaluatorService
 
     private function eq(mixed $a, mixed $b): bool
     {
-        // String comparison: case-insensitive
         if (is_string($a) && is_string($b)) {
             return strtolower($a) === strtolower($b);
         }
-        // Numeric: cast
+        // Numeric: epsilon comparison agar tidak gagal karena floating-point exact-bit
         if (is_numeric($a) && is_numeric($b)) {
-            return (float) $a === (float) $b;
+            return abs((float) $a - (float) $b) < 1e-9;
         }
         return $a === $b;
     }

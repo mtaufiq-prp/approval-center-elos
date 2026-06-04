@@ -122,8 +122,11 @@ class FlowEngineService
     public function completeCurrentTask(TblTask $task, string $actionCode, ?string $comment, int $actorId): void
     {
         DB::transaction(function () use ($task, $actionCode, $comment, $actorId) {
+            // Re-fetch dengan row lock agar concurrent request tidak double-advance
+            $task = TblTask::where('idtbltask', $task->idtbltask)->lockForUpdate()->firstOrFail();
+
             // Task yang bisa diproses: OPEN atau CLAIMED
-            if (! in_array($task->task_status, ['OPEN', 'CLAIMED', 'PENDING'])) {
+            if (! in_array($task->task_status, ['OPEN', 'CLAIMED'])) {
                 throw new \RuntimeException("Task #{$task->idtbltask} sudah dalam status {$task->task_status}.");
             }
 
@@ -133,7 +136,7 @@ class FlowEngineService
                 'REJECT'                  => 'REJECTED',
                 'RETURN'                  => 'RETURNED',
                 'CANCEL'                  => 'CANCELLED',
-                default                   => 'APPROVED',
+                default                   => throw new \RuntimeException("Action code tidak dikenal: {$actionCode}"),
             };
 
             $task->task_status            = $taskStatus;
@@ -143,7 +146,8 @@ class FlowEngineService
             $task->completed_at           = now();
             $task->save();
 
-            $instance = TblProcessInstance::findOrFail($task->idtblprocess_instance);
+            $instance = TblProcessInstance::where('idtblprocess_instance', $task->idtblprocess_instance)
+                            ->lockForUpdate()->firstOrFail();
             $request  = TblApprovalRequest::findOrFail($instance->idtblapproval_request);
             $token    = TblProcessToken::where('idtblprocess_instance', $instance->idtblprocess_instance)
                             ->where('token_status', TblProcessToken::STATUS_ACTIVE)
@@ -172,15 +176,29 @@ class FlowEngineService
                 TblProcessRouteLog::EV_EXIT_NODE, $currentNode->step_type, $actionCode, null,
                 "Task #{$task->idtbltask} diselesaikan: {$actionCode}");
 
-            // Cek approval_mode (ANY/ALL/SEQUENTIAL)
+            // Cek approval_mode (ANY/ALL)
             if ($currentNode->approval_mode === 'ALL') {
-                $pending = TblTask::where('idtblprocess_instance', $instance->idtblprocess_instance)
+                $stillOpen = TblTask::where('idtblprocess_instance', $instance->idtblprocess_instance)
                     ->where('idtblflow_step', $currentNode->idtblflow_step)
-                    ->where('task_status', 'PENDING')->count();
-                if ($pending > 0 && $actionCode === 'APPROVE') {
+                    ->whereIn('task_status', ['OPEN', 'CLAIMED'])
+                    ->where('idtbltask', '!=', $task->idtbltask)
+                    ->count();
+                if ($stillOpen > 0 && strtoupper($actionCode) === 'APPROVE') {
                     // Masih menunggu approver lain di node ini (mode ALL)
                     return;
                 }
+            }
+
+            // ANY mode: cancel sibling task yang masih OPEN/CLAIMED di node yang sama
+            if ($currentNode->approval_mode !== 'ALL') {
+                TblTask::where('idtblprocess_instance', $instance->idtblprocess_instance)
+                    ->where('idtblflow_step', $currentNode->idtblflow_step)
+                    ->whereIn('task_status', ['OPEN', 'CLAIMED'])
+                    ->where('idtbltask', '!=', $task->idtbltask)
+                    ->update([
+                        'task_status'  => 'CANCELLED',
+                        'completed_at' => now(),
+                    ]);
             }
 
             // Teruskan ke next node
@@ -328,9 +346,10 @@ class FlowEngineService
                 }
             }
 
-            // Tidak ada sama sekali → complete
-            $this->completeProcess($instance, $request, 'COMPLETED',
-                "Tidak ada transition match dari DECISION node '{$node->node_code}'.");
+            // Tidak ada sama sekali → ERROR (fail-safe, bukan fail-open)
+            Log::error("FlowEngine: DECISION node '{$node->node_code}' tidak punya transition match maupun default. Process dihentikan dengan ERROR.");
+            $this->completeProcess($instance, $request, 'ERROR',
+                "Tidak ada transition match dari DECISION node '{$node->node_code}'. Periksa konfigurasi flow.");
             return;
         }
 

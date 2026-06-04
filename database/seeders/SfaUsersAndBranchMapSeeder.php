@@ -129,7 +129,7 @@ class SfaUsersAndBranchMapSeeder extends Seeder
         '1425'=>'KEDIRI',      '1426'=>'SAMARINDA',   '1427'=>'DKJ TIMUR',
         '1428'=>'TASIKMALAYA', '1430'=>'PURWOKERTO',  '1432'=>'DKJ BARAT',
         '1433'=>'KENDARI',     '1434'=>'SERANG',       '1439'=>'SURABAYA',
-        '1442'=>'JAMBI',       '1446'=>'PADANG',       '1417'=>'LAMPUNG',
+        '1442'=>'JAMBI',       '1446'=>'PADANG',
     ];
 
     public function run(): void
@@ -161,7 +161,7 @@ class SfaUsersAndBranchMapSeeder extends Seeder
                         str_replace([' ', '(', ')'], ['.', '', ''], strtolower($emp['name']))
                     )
                 ) . '@propanraya.com',
-                'password'             => Hash::make('Propan@' . $emp['id']),
+                'password'             => Hash::make(bin2hex(random_bytes(16))),
                 'must_change_password' => 1,
                 'is_active'            => 1,
             ]);
@@ -203,9 +203,8 @@ class SfaUsersAndBranchMapSeeder extends Seeder
         $this->command->info('');
         $this->command->info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         $this->command->info('  ✅  Selesai.');
-        $this->command->info('  Default password: Propan@{npk}');
-        $this->command->info('  Contoh: Propan@11110247 untuk SLAMET SANTOSO');
-        $this->command->info('  Contoh: Propan@1030018 untuk KRIS RIANTO');
+        $this->command->info('  Password di-generate secara acak (must_change_password=1).');
+        $this->command->info('  Gunakan fitur Reset Password di menu Master → User untuk set password awal.');
         $this->command->info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     }
 }

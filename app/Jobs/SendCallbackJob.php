@@ -31,9 +31,32 @@ class SendCallbackJob implements ShouldQueue
         $cb = TblCallbackOutbox::find($this->callbackId);
         if (! $cb || $cb->status === 'SUCCESS') return;
 
+        // SSRF guard: tolak URL yang mengarah ke loopback
+        $host = strtolower(parse_url($cb->callback_url, PHP_URL_HOST) ?? '');
+        if (in_array($host, ['localhost', '127.0.0.1', '::1', '0.0.0.0'], true) || str_ends_with($host, '.local')) {
+            Log::error("SendCallback #{$this->callbackId}: callback_url mengarah ke loopback ({$host}), ditolak.");
+            $cb->status     = 'FAILED';
+            $cb->last_error = 'SSRF_BLOCKED: loopback URL tidak diizinkan.';
+            $cb->save();
+            return;
+        }
+
         try {
+            // Buat HMAC signature untuk callback agar penerima bisa verifikasi keaslian
+            $timestamp   = (string) time();
+            $bodyJson    = json_encode($cb->payload_json ?? [], JSON_UNESCAPED_UNICODE);
+            $nonce       = bin2hex(random_bytes(8));
+            $cbSecret    = config('app.callback_hmac_secret', config('app.key'));
+            $signature   = hash_hmac('sha256', $timestamp . "\n" . $nonce . "\n" . $bodyJson, $cbSecret);
+
             $response = Http::timeout(15)
-                ->withHeaders(['Content-Type' => 'application/json', 'X-Source' => 'ApprovalCenter'])
+                ->withHeaders([
+                    'Content-Type'       => 'application/json',
+                    'X-Source'           => 'ApprovalCenter',
+                    'X-Callback-Ts'      => $timestamp,
+                    'X-Callback-Nonce'   => $nonce,
+                    'X-Callback-Sig'     => $signature,
+                ])
                 ->post($cb->callback_url, $cb->payload_json ?? []);
 
             if ($response->successful()) {
