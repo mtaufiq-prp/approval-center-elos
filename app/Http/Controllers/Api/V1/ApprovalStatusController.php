@@ -18,7 +18,8 @@ class ApprovalStatusController extends Controller
         $client = $request->attributes->get('api_client');
 
         $q = TblApprovalRequest::where('idtblsource_app', $client->idtblsource_app)
-            ->with(['processInstances.routeLogs', 'pendingTasks.assignee']);
+            ->with(['tasks' => fn($t) => $t->whereIn('task_status', ['OPEN', 'CLAIMED']),
+                    'tasks.assignedUser', 'tasks.flowStep']);
 
         if ($id = $request->route('approval_request_id') ?? $request->query('approval_request_id')) {
             $q->where('idtblapproval_request', (int) $id);
@@ -36,10 +37,10 @@ class ApprovalStatusController extends Controller
             return response()->json(['success' => false, 'message' => 'Approval request tidak ditemukan.'], 404);
         }
 
-        $pendingTasks = $req->pendingTasks->map(fn($t) => [
+        $pendingTasks = $req->tasks->map(fn($t) => [
             'task_id'         => $t->idtbltask,
             'node_code'       => optional($t->flowStep)->node_code,
-            'assignee_ref'    => optional($t->assignee)->user_ref,
+            'assignee_ref'    => optional($t->assignedUser)->user_ref,
             'due_at'          => optional($t->due_at)?->toIso8601String(),
         ]);
 

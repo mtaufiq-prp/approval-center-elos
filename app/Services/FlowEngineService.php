@@ -350,9 +350,10 @@ class FlowEngineService
         $gatewayType = $node->gateway_type ?? TblFlowStep::GATEWAY_EXCLUSIVE;
         $context     = $request->context_json ?? [];
 
+        // DECISION di-route MURNI oleh condition_json + priority; action_code edge
+        // hanyalah label, tidak boleh memfilter (#50).
         $outgoing = TblFlowTransition::where('idtblflow_step_from', $node->idtblflow_step)
             ->where('is_active', 1)
-            ->where(fn($q) => $q->whereNull('action_code')->orWhere(fn($q2) => $actionCode ? $q2->where('action_code', $actionCode) : $q2->whereRaw('0')))
             ->orderBy('priority_no')
             ->get();
 
@@ -417,11 +418,18 @@ class FlowEngineService
     ): ?TblFlowTransition {
         $context = $request->context_json ?? [];
 
-        $outgoing = TblFlowTransition::where('idtblflow_step_from', $node->idtblflow_step)
-            ->where('is_active', 1)
-            ->where(fn($q) => $q->whereNull('action_code')->orWhere(fn($q2) => $actionCode ? $q2->where('action_code', $actionCode) : $q2->whereRaw('0')))
-            ->orderBy('priority_no')
-            ->get();
+        $query = TblFlowTransition::where('idtblflow_step_from', $node->idtblflow_step)
+            ->where('is_active', 1);
+
+        // Filter action_code HANYA untuk node APPROVAL (edge dipilih oleh keputusan approver).
+        // Node sistem (START/DECISION/REVIEW/...) di-route murni oleh kondisi, sehingga
+        // edge ber-action_code label ('SUBMIT','AUTO_APPROVE') tetap match (#50).
+        if ($node->isApproval()) {
+            $query->where(fn($q) => $q->whereNull('action_code')
+                ->orWhere(fn($q2) => $actionCode ? $q2->where('action_code', $actionCode) : $q2->whereRaw('0')));
+        }
+
+        $outgoing = $query->orderBy('priority_no')->get();
 
         foreach ($outgoing as $edge) {
             $result = empty($edge->condition_json) || $this->condEval->evaluate($edge->condition_json, $context);
