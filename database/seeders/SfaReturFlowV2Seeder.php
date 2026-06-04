@@ -131,11 +131,11 @@ class SfaReturFlowV2Seeder extends Seeder
             $edges[] = $this->e($vid,$n['DECISION_JALUR'],$n['BMH'],'AUTO_APPROVE','D_JALUR_P1','Poin 1: Nilai > 25 Juta',120,
                 ['op'=>'SUM_GT','field'=>'_computed.total_nilai_retur','value'=>25000000]);
             $edges[] = $this->e($vid,$n['DECISION_JALUR'],$n['BMH'],'AUTO_APPROVE','D_JALUR_P2','Poin 2: Nilai 15-25 Juta',130,
-                $this->between('_computed.total_nilai_retur',15000001,25000000));
+                $this->between('_computed.total_nilai_retur',15000000,25000000));
             $edges[] = $this->e($vid,$n['DECISION_JALUR'],$n['BMH'],'AUTO_APPROVE','D_JALUR_P5','Poin 5: Alasan Khusus',140,
                 $this->anyIn('_computed.idmsalasan_list',[56,62,63,64,66]));
             $edges[] = $this->e($vid,$n['DECISION_JALUR'],$n['BMH'],'AUTO_APPROVE','D_JALUR_P3','Poin 3: Nilai 5-15 Juta',150,
-                $this->between('_computed.total_nilai_retur',5000001,15000000));
+                $this->between('_computed.total_nilai_retur',5000000,15000000));
             $edges[] = $this->e($vid,$n['DECISION_JALUR'],$n['BMH'],'AUTO_APPROVE','D_JALUR_P4','Poin 4: Default ≤ 5 Juta',200,
                 null,null,true);
 
@@ -152,7 +152,7 @@ class SfaReturFlowV2Seeder extends Seeder
             $edges[] = $this->e($vid,$n['RRM'],$n['END'],'REJECT','RRM_REJECT','RRM Tolak',100,null,'REJECTED');
             $edges[] = $this->e($vid,$n['RRM'],$n['END'],'APPROVE','RRM_APPROVE_END_P3','RRM Approve — Selesai (Poin 3)',110,
                 $this->and([
-                    $this->between('_computed.total_nilai_retur',5000001,15000000),
+                    $this->between('_computed.total_nilai_retur',5000000,15000000),
                     $this->noneIn('_computed.idmsalasan_list',[11,33,34,35,36,56,61,62,63,64,66,68]),
                 ]),'APPROVED');
             $edges[] = $this->e($vid,$n['RRM'],$n['NRM'],'APPROVE','RRM_APPROVE_NRM','RRM Approve → NRM',200);
@@ -220,10 +220,15 @@ class SfaReturFlowV2Seeder extends Seeder
     private function noneIn(string $field, array $values): array
     { return ['op'=>'NONE_IN','field'=>$field,'value'=>$values]; }
 
+    /**
+     * Range tier half-open: (min, max]  → SUM_GT min AND SUM_LTE max.
+     * Lower eksklusif + upper inklusif membuat tier kontigu untuk semua nilai
+     * (termasuk pecahan), tanpa celah di batas (#114).
+     */
     private function between(string $field, float $min, float $max): array
     {
         return ['logic'=>'AND','conditions'=>[
-            ['op'=>'SUM_GTE','field'=>$field,'value'=>$min],
+            ['op'=>'SUM_GT', 'field'=>$field,'value'=>$min],
             ['op'=>'SUM_LTE','field'=>$field,'value'=>$max],
         ]];
     }

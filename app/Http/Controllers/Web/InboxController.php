@@ -272,7 +272,8 @@ class InboxController extends Controller
             return redirect()->route('inbox.index')->with('status', $msg);
 
         } catch (\Throwable $e) {
-            return back()->with('error', 'Gagal memproses keputusan: ' . $e->getMessage());
+            \Illuminate\Support\Facades\Log::error("Inbox act task #{$task->idtbltask}: {$e->getMessage()}", ['trace' => $e->getTraceAsString()]);
+            return back()->with('error', 'Gagal memproses keputusan. Silakan coba lagi atau hubungi administrator.');
         }
     }
 
@@ -289,6 +290,7 @@ class InboxController extends Controller
         $isCompletedBy = $task->idtbluser_completed_by == $user->idtbluser;
         $isCandidate   = $task->candidates()
             ->where('idtbluser', $user->idtbluser)
+            ->where('is_active', 1)   // #107: paritas dengan authorizeAction
             ->exists();
 
         if (! $isAssigned && ! $isCompletedBy && ! $isCandidate && ! $user->hasAnyRole('ADMIN_APPROVAL')) {

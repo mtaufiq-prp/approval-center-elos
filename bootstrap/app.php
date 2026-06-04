@@ -31,7 +31,8 @@ return Application::configure(basePath: dirname(__DIR__))
             'role'                  => \App\Http\Middleware\EnsureUserHasRole::class,
             'force_password_change' => \App\Http\Middleware\ForcePasswordChange::class,
             'api_client_auth'       => \App\Http\Middleware\ApiClientAuthenticate::class,
-            'api_client_hmac'       => \App\Http\Middleware\ApiClientVerifyHmac::class,
+            // 'api_client_hmac' dihapus (#105): dulu pass-through yang fail-open.
+            // Gunakan 'api_client_auth' untuk autentikasi API.
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

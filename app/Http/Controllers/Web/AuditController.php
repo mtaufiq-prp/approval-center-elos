@@ -41,10 +41,10 @@ class AuditController extends Controller
             $q->where('action_code', $request->input('action_code'));
         }
         if ($request->filled('date_from')) {
-            $q->whereDate('created_at', '>=', $request->input('date_from'));
+            $q->where('created_at', '>=', $request->input('date_from'));
         }
         if ($request->filled('date_to')) {
-            $q->whereDate('created_at', '<=', $request->input('date_to'));
+            $q->where('created_at', '<', \Carbon\Carbon::parse($request->input('date_to'))->addDay());
         }
 
         $items = $q->orderByDesc('created_at')->paginate(30)->withQueryString();
@@ -71,10 +71,10 @@ class AuditController extends Controller
             $q->where('entity_type', $request->input('entity_type'));
         }
         if ($request->filled('date_from')) {
-            $q->whereDate('created_at', '>=', $request->input('date_from'));
+            $q->where('created_at', '>=', $request->input('date_from'));
         }
         if ($request->filled('date_to')) {
-            $q->whereDate('created_at', '<=', $request->input('date_to'));
+            $q->where('created_at', '<', \Carbon\Carbon::parse($request->input('date_to'))->addDay());
         }
 
         $items       = $q->orderByDesc('created_at')->paginate(30)->withQueryString();
@@ -102,10 +102,10 @@ class AuditController extends Controller
             $q->where('idtblsource_app', (int) $request->input('idtblsource_app'));
         }
         if ($request->filled('date_from')) {
-            $q->whereDate('created_at', '>=', $request->input('date_from'));
+            $q->where('created_at', '>=', $request->input('date_from'));
         }
         if ($request->filled('date_to')) {
-            $q->whereDate('created_at', '<=', $request->input('date_to'));
+            $q->where('created_at', '<', \Carbon\Carbon::parse($request->input('date_to'))->addDay());
         }
 
         $items      = $q->orderByDesc('created_at')->paginate(30)->withQueryString();
@@ -126,10 +126,10 @@ class AuditController extends Controller
             $q->where('idtblsource_app', (int) $request->input('idtblsource_app'));
         }
         if ($request->filled('date_from')) {
-            $q->whereDate('created_at', '>=', $request->input('date_from'));
+            $q->where('created_at', '>=', $request->input('date_from'));
         }
         if ($request->filled('date_to')) {
-            $q->whereDate('created_at', '<=', $request->input('date_to'));
+            $q->where('created_at', '<', \Carbon\Carbon::parse($request->input('date_to'))->addDay());
         }
 
         $items      = $q->orderByDesc('created_at')->paginate(30)->withQueryString();

@@ -17,6 +17,8 @@ class ApiClientVerifyHmac
 {
     public function handle(Request $request, Closure $next): Response
     {
-        return $next($request);
+        // Fail-closed (#105): middleware ini tidak mengautentikasi apa pun.
+        // Jangan pernah dipakai untuk melindungi route — gunakan 'api_client_auth'.
+        abort(500, 'Middleware ApiClientVerifyHmac tidak boleh dipakai; gunakan api_client_auth.');
     }
 }
