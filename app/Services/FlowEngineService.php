@@ -130,6 +130,17 @@ class FlowEngineService
                 throw new \RuntimeException("Task #{$task->idtbltask} sudah dalam status {$task->task_status}.");
             }
 
+            // Lock instance & pastikan masih RUNNING sebelum memutasi apa pun.
+            // Cegah task OPEN basi menghidupkan kembali instance yang sudah final (#84).
+            $instance = TblProcessInstance::where('idtblprocess_instance', $task->idtblprocess_instance)
+                            ->lockForUpdate()->firstOrFail();
+            if ($instance->instance_status !== 'RUNNING') {
+                throw new \RuntimeException(
+                    "Instance #{$instance->idtblprocess_instance} sudah {$instance->instance_status}; task #{$task->idtbltask} tidak bisa diproses."
+                );
+            }
+            $request = TblApprovalRequest::findOrFail($instance->idtblapproval_request);
+
             // Map actionCode ke task_status sesuai ENUM schema
             $taskStatus = match(strtoupper($actionCode)) {
                 'APPROVE', 'AUTO_APPROVE' => 'APPROVED',
@@ -145,10 +156,6 @@ class FlowEngineService
             $task->idtbluser_completed_by = $actorId;
             $task->completed_at           = now();
             $task->save();
-
-            $instance = TblProcessInstance::where('idtblprocess_instance', $task->idtblprocess_instance)
-                            ->lockForUpdate()->firstOrFail();
-            $request  = TblApprovalRequest::findOrFail($instance->idtblapproval_request);
             $token = TblProcessToken::where('idtblprocess_instance', $instance->idtblprocess_instance)
                             ->where('token_status', TblProcessToken::STATUS_ACTIVE)
                             ->orderBy('idtblprocess_token')
@@ -234,14 +241,23 @@ class FlowEngineService
 
         // APPROVAL: sudah ditangani startProcess/completeCurrentTask via createApprovalTask
         if ($node->isApproval()) {
-            $nextNode = $this->findNextEligibleNode($node, $instance, $request, $actionCode);
-            if ($nextNode) {
-                $this->enterNode($nextNode, $instance, $request, $token, $actionCode);
-            } else {
-                // Tidak ada next edge yang match → gunakan final_status dari edge jika ada
-                $this->completeProcess($instance, $request, 'COMPLETED',
-                    "Tidak ada next node dari APPROVAL '{$node->node_code}' action {$actionCode}.");
+            $edge = $this->resolveOutgoingTransition($node, $instance, $request, $actionCode);
+            if ($edge) {
+                // Transition terminal: hormati final_status (mis. REJECT → REJECTED)
+                if (! empty($edge->final_status)) {
+                    $this->completeProcess($instance, $request, $edge->final_status,
+                        "Transition '{$edge->transition_code}' final_status={$edge->final_status} dari '{$node->node_code}'.");
+                    return;
+                }
+                $nextNode = $edge->idtblflow_step_to ? TblFlowStep::find($edge->idtblflow_step_to) : null;
+                if ($nextNode) {
+                    $this->enterNode($nextNode, $instance, $request, $token, $actionCode);
+                    return;
+                }
             }
+            // Tidak ada next node → derive status dari action (fail-safe, bukan fail-open)
+            $this->completeProcess($instance, $request, $this->terminalStatusForAction($actionCode),
+                "Tidak ada next node dari APPROVAL '{$node->node_code}' action {$actionCode}.");
             return;
         }
 
@@ -251,10 +267,10 @@ class FlowEngineService
             return;
         }
 
-        // END
+        // END: status terminal diturunkan dari action_code yang membawa ke sini
         if ($node->isEnd()) {
-            $this->completeProcess($instance, $request, 'COMPLETED',
-                "Proses mencapai END node '{$node->node_code}'.");
+            $this->completeProcess($instance, $request, $this->terminalStatusForAction($actionCode),
+                "Proses mencapai END node '{$node->node_code}' (action {$actionCode}).");
             return;
         }
 
@@ -285,15 +301,20 @@ class FlowEngineService
             $token->save();
         }
 
-        // Update instance current step + pastikan RUNNING (in case ada dev reset)
-        if ($instance->instance_status !== 'RUNNING') {
-            $instance->instance_status = 'RUNNING';
-        }
+        // Update instance current step. TIDAK me-reset instance_status ke RUNNING:
+        // instance final tidak boleh dihidupkan kembali oleh traversal (#84).
         $instance->idtblflow_step_current = $node->idtblflow_step;
         $instance->save();
 
         // APPROVAL: buat task & berhenti (tunggu keputusan approver). Tidak auto-forward.
         if ($node->isApproval()) {
+            // Sinkronkan pointer step & status request agar monitoring akurat (#91)
+            $request->idtblflow_step_current = $node->idtblflow_step;
+            if ($request->request_status === 'SUBMITTED') {
+                $request->request_status = 'IN_PROGRESS';
+            }
+            $request->save();
+
             $this->createApprovalTask($node, $instance, $request);
             return;
         }
@@ -330,20 +351,18 @@ class FlowEngineService
 
         // Pilih berdasarkan gateway_type
         if ($gatewayType === TblFlowStep::GATEWAY_EXCLUSIVE || $gatewayType === TblFlowStep::GATEWAY_NONE) {
-            // Ambil priority_no terkecil yang match
-            $chosen = $matched->sortBy('priority_no')->first();
+            // Ambil priority_no terkecil yang match, fallback ke default
+            $chosen = $matched->sortBy('priority_no')->first()
+                ?? $outgoing->where('is_default', true)->sortBy('priority_no')->first();
+
             if ($chosen) {
-                $nextNode = TblFlowStep::find($chosen->idtblflow_step_to);
-                if ($nextNode) {
-                    $this->enterNode($nextNode, $instance, $request, $token, $actionCode);
+                // Transition terminal: hormati final_status
+                if (! empty($chosen->final_status)) {
+                    $this->completeProcess($instance, $request, $chosen->final_status,
+                        "DECISION '{$node->node_code}' → final_status={$chosen->final_status}.");
                     return;
                 }
-            }
-
-            // Tidak ada match → cari default transition
-            $default = $outgoing->where('is_default', true)->sortBy('priority_no')->first();
-            if ($default) {
-                $nextNode = TblFlowStep::find($default->idtblflow_step_to);
+                $nextNode = $chosen->idtblflow_step_to ? TblFlowStep::find($chosen->idtblflow_step_to) : null;
                 if ($nextNode) {
                     $this->enterNode($nextNode, $instance, $request, $token, $actionCode);
                     return;
@@ -367,12 +386,17 @@ class FlowEngineService
         }
     }
 
-    private function findNextEligibleNode(
+    /**
+     * Resolve transition keluar yang match untuk action+kondisi tertentu.
+     * Mengembalikan TblFlowTransition (agar pemanggil bisa membaca final_status &
+     * idtblflow_step_to), atau null jika tidak ada match maupun default.
+     */
+    private function resolveOutgoingTransition(
         TblFlowStep $node,
         TblProcessInstance $instance,
         TblApprovalRequest $request,
         ?string $actionCode
-    ): ?TblFlowStep {
+    ): ?TblFlowTransition {
         $context = $request->context_json ?? [];
 
         $outgoing = TblFlowTransition::where('idtblflow_step_from', $node->idtblflow_step)
@@ -380,10 +404,6 @@ class FlowEngineService
             ->where(fn($q) => $q->whereNull('action_code')->orWhere(fn($q2) => $actionCode ? $q2->where('action_code', $actionCode) : $q2->whereRaw('0')))
             ->orderBy('priority_no')
             ->get();
-
-        // Pre-load semua step target sekaligus untuk hilangkan N+1 (#25)
-        $stepIds   = $outgoing->pluck('idtblflow_step_to')->filter()->unique()->values();
-        $stepCache = TblFlowStep::whereIn('idtblflow_step', $stepIds)->get()->keyBy('idtblflow_step');
 
         foreach ($outgoing as $edge) {
             $result = empty($edge->condition_json) || $this->condEval->evaluate($edge->condition_json, $context);
@@ -393,17 +413,25 @@ class FlowEngineService
                 $node->step_type, $actionCode, $result,
                 "Evaluasi edge {$edge->transition_code}: " . ($result ? 'MATCH' : 'SKIP'));
             if ($result) {
-                return $edge->idtblflow_step_to ? $stepCache->get($edge->idtblflow_step_to) : null;
+                return $edge;
             }
         }
 
         // Default transition
-        $default = $outgoing->where('is_default', true)->sortBy('priority_no')->first();
-        if ($default) {
-            return $default->idtblflow_step_to ? $stepCache->get($default->idtblflow_step_to) : null;
-        }
+        return $outgoing->where('is_default', true)->sortBy('priority_no')->first();
+    }
 
-        return null;
+    private function findNextEligibleNode(
+        TblFlowStep $node,
+        TblProcessInstance $instance,
+        TblApprovalRequest $request,
+        ?string $actionCode
+    ): ?TblFlowStep {
+        $edge = $this->resolveOutgoingTransition($node, $instance, $request, $actionCode);
+        if (! $edge || ! $edge->idtblflow_step_to) {
+            return null;
+        }
+        return TblFlowStep::find($edge->idtblflow_step_to);
     }
 
     private function createApprovalTask(
@@ -458,21 +486,61 @@ class FlowEngineService
             count($candidates) . " task dibuat untuk node '{$node->node_code}'");
     }
 
+    /**
+     * Map "final status" keputusan (COMPLETED/APPROVED/REJECTED/RETURNED/CANCELLED/ERROR)
+     * ke ENUM tblprocess_instance.instance_status ('RUNNING','COMPLETED','REJECTED','CANCELLED','ERROR').
+     * RETURNED/APPROVED tidak ada di ENUM instance → di-map ke COMPLETED (proses berhenti).
+     */
+    private function mapInstanceStatus(string $finalStatus): string
+    {
+        return match (strtoupper($finalStatus)) {
+            'REJECTED'  => 'REJECTED',
+            'CANCELLED' => 'CANCELLED',
+            'ERROR'     => 'ERROR',
+            default     => 'COMPLETED', // COMPLETED / APPROVED / RETURNED
+        };
+    }
+
+    /**
+     * Map "final status" keputusan ke ENUM tblapproval_request.request_status.
+     * COMPLETED → APPROVED (ENUM request tidak punya COMPLETED).
+     */
+    private function mapRequestStatus(string $finalStatus): string
+    {
+        return match (strtoupper($finalStatus)) {
+            'COMPLETED', 'APPROVED' => 'APPROVED',
+            'REJECTED'              => 'REJECTED',
+            'RETURNED'              => 'RETURNED',
+            'CANCELLED'             => 'CANCELLED',
+            default                 => 'ERROR',
+        };
+    }
+
+    /**
+     * Terjemahkan action_code terminal (saat tak ada next node) ke final status.
+     * Mencegah fail-open: REJECT/RETURN/CANCEL tidak boleh berakhir APPROVED.
+     */
+    private function terminalStatusForAction(?string $actionCode): string
+    {
+        return match (strtoupper((string) $actionCode)) {
+            'REJECT' => 'REJECTED',
+            'RETURN' => 'RETURNED',
+            'CANCEL' => 'CANCELLED',
+            default  => 'COMPLETED', // APPROVE / AUTO_APPROVE / AUTO / SUBMIT
+        };
+    }
+
     private function completeProcess(
         TblProcessInstance $instance,
         TblApprovalRequest $request,
         string $finalStatus,
         string $reason
     ): void {
-        $instance->instance_status = $finalStatus;
+        $instance->instance_status = $this->mapInstanceStatus($finalStatus);
         $instance->ended_at = now();
         $instance->save();
 
-        // ENUM tblapproval_request.request_status tidak punya COMPLETED — map ke APPROVED.
-        $request->request_status = match ($finalStatus) {
-            'COMPLETED' => 'APPROVED',
-            default     => $finalStatus, // REJECTED / CANCELLED / ERROR sama persis di kedua ENUM
-        };
+        $request->request_status = $this->mapRequestStatus($finalStatus);
         $request->completed_at = now();
         $request->save();
 
