@@ -46,6 +46,10 @@ class FlowEngineService
         private AssigneeResolverService   $assigneeResolver,
     ) {}
 
+    /** Guard anti-loop traversal (#69). Di-reset di setiap entry point publik. */
+    private int $hopCount = 0;
+    private const MAX_HOPS = 100;
+
     // ======================================================================
     // PUBLIC API
     // ======================================================================
@@ -87,6 +91,7 @@ class FlowEngineService
                 'Proses dimulai');
 
             // Langsung teruskan dari START (tidak buat task untuk START)
+            $this->hopCount = 0;
             $this->traverseFromNode($startNode, $instance, $request, $token, null);
 
             return $instance->fresh();
@@ -141,6 +146,16 @@ class FlowEngineService
                 );
             }
             $request = TblApprovalRequest::findOrFail($instance->idtblapproval_request);
+
+            // #63 Segregation of duties: submitter tidak boleh menyetujui request-nya
+            // sendiri (kecuali diizinkan eksplisit via env). REJECT/RETURN/CANCEL tetap boleh.
+            $allowSelf = (bool) env('APPROVAL_ALLOW_SELF_APPROVAL', false);
+            if (! $allowSelf
+                && in_array(strtoupper($actionCode), ['APPROVE', 'AUTO_APPROVE'], true)
+                && $request->idtbluser_submitter
+                && (int) $request->idtbluser_submitter === (int) $actorId) {
+                throw new \RuntimeException('Pengaju tidak boleh menyetujui request-nya sendiri (segregation of duties).');
+            }
 
             // Map actionCode ke task_status sesuai ENUM schema
             $taskStatus = match(strtoupper($actionCode)) {
@@ -219,6 +234,7 @@ class FlowEngineService
             }
 
             // Teruskan ke next node
+            $this->hopCount = 0;
             $this->traverseFromNode($currentNode, $instance, $request, $token, $actionCode);
         });
     }
@@ -297,7 +313,10 @@ class FlowEngineService
         if ($nextNode) {
             $this->enterNode($nextNode, $instance, $request, $token, 'AUTO');
         } else {
-            $this->completeProcess($instance, $request, 'COMPLETED', "Auto-completed dari node {$node->step_type}.");
+            // Node sistem tanpa next edge = kesalahan konfigurasi → ERROR, bukan APPROVED (#69)
+            Log::error("FlowEngine: node {$node->step_type} '{$node->node_code}' tidak punya next edge. Dihentikan ERROR.");
+            $this->completeProcess($instance, $request, 'ERROR',
+                "Node {$node->step_type} '{$node->node_code}' tidak punya transition keluar.");
         }
     }
 
@@ -308,6 +327,14 @@ class FlowEngineService
         ?TblProcessToken $token,
         ?string $actionCode
     ): void {
+        // Loop-guard: hentikan bila traversal melewati batas wajar (config siklik) (#69)
+        if (++$this->hopCount > self::MAX_HOPS) {
+            Log::error("FlowEngine: melebihi MAX_HOPS (" . self::MAX_HOPS . ") di node '{$node->node_code}' — kemungkinan flow siklik. Dihentikan ERROR.");
+            $this->completeProcess($instance, $request, 'ERROR',
+                "Traversal melebihi batas {$node->node_code} — flow kemungkinan memiliki siklus.");
+            return;
+        }
+
         $this->logRoute($request->idtblapproval_request, $instance->idtblprocess_instance,
             $node->idtblflow_step, null,
             TblProcessRouteLog::EV_ENTER_NODE, $node->step_type, $actionCode, null,

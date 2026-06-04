@@ -43,6 +43,11 @@ class ApiClientAuthenticate
         if (! $client)          return $this->deny('CLIENT_NOT_FOUND', 'Client key tidak dikenal.', $request);
         if (! $client->is_active) return $this->deny('CLIENT_REVOKED', 'API Client di-revoke.', $request);
 
+        // #54: tolak kredensial yang sudah kadaluarsa
+        if ($client->token_expired_at && $client->token_expired_at->isPast()) {
+            return $this->deny('CLIENT_EXPIRED', 'Kredensial API Client sudah kadaluarsa.', $request);
+        }
+
         // IP check
         if ($client->allowed_ip && ! $this->checkIp($request->ip(), $client->allowed_ip)) {
             return $this->deny('IP_NOT_ALLOWED', "IP {$request->ip()} tidak diizinkan.", $request);

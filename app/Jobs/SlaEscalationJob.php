@@ -35,20 +35,21 @@ class SlaEscalationJob implements ShouldQueue
 
     public function handle(): void
     {
-        $overdue = TblTask::with(['approvalRequest', 'flowStep', 'candidates.user'])
+        // #66: proses bertahap (chunkById) agar tidak memuat semua ke memori (anti-OOM)
+        $total = 0;
+        TblTask::with(['approvalRequest', 'flowStep', 'candidates.user', 'assignedUser'])
             ->where('task_status', 'OPEN')
             ->whereNotNull('due_at')
             ->where('due_at', '<', now())
-            ->get();
+            ->chunkById(200, function ($tasks) use (&$total) {
+                foreach ($tasks as $task) {
+                    $this->processTask($task);
+                    $total++;
+                }
+            }, 'idtbltask');
 
-        if ($overdue->isEmpty()) {
-            return;
-        }
-
-        Log::info("SlaEscalationJob: {$overdue->count()} task overdue ditemukan.");
-
-        foreach ($overdue as $task) {
-            $this->processTask($task);
+        if ($total > 0) {
+            Log::info("SlaEscalationJob: {$total} task overdue diproses.");
         }
     }
 
