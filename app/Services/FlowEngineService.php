@@ -145,6 +145,16 @@ class FlowEngineService
                     "Instance #{$instance->idtblprocess_instance} sudah {$instance->instance_status}; task #{$task->idtbltask} tidak bisa diproses."
                 );
             }
+
+            // #72 Defense-in-depth: task harus berada di node aktif instance saat ini.
+            // Cegah aksi pada task basi dari node yang sudah dilewati (single-token flow).
+            if ($instance->idtblflow_step_current
+                && (int) $task->idtblflow_step !== (int) $instance->idtblflow_step_current) {
+                throw new \RuntimeException(
+                    "Task #{$task->idtbltask} berada di node yang bukan node aktif instance #{$instance->idtblprocess_instance}."
+                );
+            }
+
             $request = TblApprovalRequest::findOrFail($instance->idtblapproval_request);
 
             // #63 Segregation of duties: submitter tidak boleh menyetujui request-nya
@@ -497,8 +507,14 @@ class FlowEngineService
         $candidates = $this->assigneeResolver->resolve($node, $context, $submitter);
 
         if ($candidates->isEmpty()) {
-            Log::error("AssigneeResolver: Tidak ada kandidat approver untuk node '{$node->node_code}' request #{$request->idtblapproval_request}");
-            $this->completeProcess($instance, $request, 'ERROR', "Tidak ada approver untuk node '{$node->node_code}'.");
+            // Fail-safe: instance ERROR (bukan auto-approve). Keputusan approver sebelumnya
+            // TETAP tersimpan (commit transaksi yang sama). Recovery: `php artisan approval:reset`
+            // setelah memperbaiki assignee rule / data approver (#56).
+            $ruleTypes = $node->activeAssigneeRules()->pluck('assignee_type')->implode(',');
+            Log::error("AssigneeResolver: Tidak ada kandidat approver untuk node '{$node->node_code}' "
+                . "(rules: [{$ruleTypes}]) request #{$request->idtblapproval_request}. Instance di-set ERROR; perbaiki lalu reset.");
+            $this->completeProcess($instance, $request, 'ERROR',
+                "Tidak ada approver untuk node '{$node->node_code}' (rules: {$ruleTypes}). Periksa assignee rule / data approver.");
             return;
         }
 
@@ -506,6 +522,16 @@ class FlowEngineService
         $notifier = app(\App\Services\NotificationService::class);
         $seq = 0;
         foreach ($candidates as $candidate) {
+            // #79: cegah task ganda aktif untuk (instance, step, user) saat loop/RETURN
+            $dupOpen = TblTask::where('idtblprocess_instance', $instance->idtblprocess_instance)
+                ->where('idtblflow_step', $node->idtblflow_step)
+                ->where('idtbluser_assigned', $candidate->idtbluser)
+                ->whereIn('task_status', ['OPEN', 'CLAIMED'])
+                ->exists();
+            if ($dupOpen) {
+                Log::warning("FlowEngine: task aktif sudah ada untuk user #{$candidate->idtbluser} di node '{$node->node_code}' instance #{$instance->idtblprocess_instance}; skip duplikat.");
+                continue;
+            }
             $seq++;
             $taskNo = sprintf(
                 'TSK-%s-%d-%d-%s',

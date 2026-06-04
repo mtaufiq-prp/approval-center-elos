@@ -296,11 +296,19 @@ class FlowBuilderSaveService
                 );
             });
 
-        } catch (\Throwable $e) {
+        } catch (\InvalidArgumentException $e) {
+            // Pesan validasi per-field aman ditampilkan ke admin builder
             return [
                 'success' => false,
                 'message' => $e->getMessage(),
-                'errors'  => ['exception' => $e->getMessage()],
+                'errors'  => ['validation' => $e->getMessage()],
+            ];
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error("FlowBuilderSave: {$e->getMessage()}", ['trace' => $e->getTraceAsString()]);
+            return [
+                'success' => false,
+                'message' => 'Gagal menyimpan flow. Periksa konfigurasi atau hubungi administrator.',
+                'errors'  => ['exception' => 'internal_error'],
             ];
         }
 

@@ -75,6 +75,12 @@ class FlowVersionDeploymentService
         }
 
         DB::transaction(function () use ($version, $deployNote) {
+            // #78: lock semua versi di definition ini agar dua deploy paralel tidak
+            // menghasilkan dua versi ACTIVE (serialisasi via row lock).
+            TblFlowVersion::where('idtblflow_definition', $version->idtblflow_definition)
+                ->lockForUpdate()
+                ->get();
+
             // Set version lain di flow_definition yang sama menjadi INACTIVE
             TblFlowVersion::where('idtblflow_definition', $version->idtblflow_definition)
                 ->where('idtblflow_version', '!=', $version->idtblflow_version)

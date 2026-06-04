@@ -48,7 +48,10 @@ class AuditController extends Controller
         }
 
         $items = $q->orderByDesc('created_at')->paginate(30)->withQueryString();
-        $actionCodes = TblActionLog::select('action_code')->distinct()->pluck('action_code');
+        $actionCodes = \Illuminate\Support\Facades\Cache::remember(
+            'audit:distinct:action_code', 600,
+            fn () => TblActionLog::select('action_code')->distinct()->pluck('action_code')
+        );
 
         return view('audit.action_log', compact('items', 'actionCodes'));
     }
@@ -78,8 +81,10 @@ class AuditController extends Controller
         }
 
         $items       = $q->orderByDesc('created_at')->paginate(30)->withQueryString();
-        $eventCodes  = TblAuditEvent::select('event_code')->distinct()->orderBy('event_code')->pluck('event_code');
-        $entityTypes = TblAuditEvent::select('entity_type')->distinct()->orderBy('entity_type')->pluck('entity_type');
+        $eventCodes  = \Illuminate\Support\Facades\Cache::remember('audit:distinct:event_code', 600,
+            fn () => TblAuditEvent::select('event_code')->distinct()->orderBy('event_code')->pluck('event_code'));
+        $entityTypes = \Illuminate\Support\Facades\Cache::remember('audit:distinct:entity_type', 600,
+            fn () => TblAuditEvent::select('entity_type')->distinct()->orderBy('entity_type')->pluck('entity_type'));
 
         return view('audit.audit_event', compact('items', 'eventCodes', 'entityTypes'));
     }

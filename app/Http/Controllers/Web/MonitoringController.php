@@ -41,10 +41,10 @@ class MonitoringController extends Controller
             $q->where('idtbldocument_type', (int) $request->input('idtbldocument_type'));
         }
         if ($request->filled('date_from')) {
-            $q->whereDate('created_at', '>=', $request->input('date_from'));
+            $q->where('created_at', '>=', $request->input('date_from'));
         }
         if ($request->filled('date_to')) {
-            $q->whereDate('created_at', '<=', $request->input('date_to'));
+            $q->where('created_at', '<', \Carbon\Carbon::parse($request->input('date_to'))->addDay());
         }
         if ($request->filled('priority')) {
             $q->where('priority', $request->input('priority'));

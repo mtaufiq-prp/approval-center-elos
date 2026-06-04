@@ -61,9 +61,10 @@ class FlowBuilderController extends Controller
             $data = $this->dataService->load($flow_version);
             return response()->json($data);
         } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error("builderData: {$e->getMessage()}");
             return response()->json([
                 'success' => false,
-                'message' => $e->getMessage(),
+                'message' => 'Gagal memuat data builder.',
             ], 500);
         }
     }
@@ -173,9 +174,10 @@ class FlowBuilderController extends Controller
                 'builder_url'           => route('workflow.flow-version.builder', $newVersion->idtblflow_version),
             ]);
         } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error("builderClone: {$e->getMessage()}");
             return response()->json([
                 'success' => false,
-                'message' => $e->getMessage(),
+                'message' => 'Gagal meng-clone flow version.',
             ], 422);
         }
     }
@@ -228,9 +230,10 @@ class FlowBuilderController extends Controller
             return response()->json(['success' => true, 'data' => $results]);
 
         } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error("jobtitleSearch: {$e->getMessage()}");
             return response()->json([
                 'success' => false,
-                'message' => 'Gagal mengambil data jobtitle: ' . $e->getMessage(),
+                'message' => 'Gagal mengambil data jobtitle.',
                 'data'    => [],
             ]);
         }

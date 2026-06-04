@@ -298,12 +298,13 @@ class InboxController extends Controller
         }
     }
 
-    /** Auth untuk melakukan keputusan: status WAJIB OPEN & user berwenang. */
+    /** Auth untuk melakukan keputusan: status OPEN/CLAIMED & user berwenang. */
     private function authorizeAction(TblTask $task): void
     {
         $user = auth()->user();
 
-        if ($task->task_status !== 'OPEN') {
+        // Selaras dengan engine yang menerima OPEN & CLAIMED (#74)
+        if (! in_array($task->task_status, ['OPEN', 'CLAIMED'], true)) {
             abort(403, 'Task ini sudah tidak aktif.');
         }
 
