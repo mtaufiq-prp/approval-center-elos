@@ -42,6 +42,7 @@ class RoutingRuleController extends Controller
         unset($data['condition_json_raw']);
         $row = TblRoutingRule::create($data);
         $this->audit->recordCreated($row, "Routing Rule {$row->rule_code} dibuat.");
+        \App\Services\RoutingRuleService::forget((int) $row->idtblsource_app, (int) $row->idtbldocument_type);
         return redirect()->route('workflow.routing-rule.index')->with('status', "Routing Rule {$row->rule_code} dibuat.");
     }
 
@@ -61,6 +62,7 @@ class RoutingRuleController extends Controller
         if ($routing_rule->wasChanged()) {
             $this->audit->recordUpdated($routing_rule, $original, "Routing Rule {$routing_rule->rule_code} diubah.");
         }
+        \App\Services\RoutingRuleService::forget((int) $routing_rule->idtblsource_app, (int) $routing_rule->idtbldocument_type);
         return redirect()->route('workflow.routing-rule.index')->with('status', 'Routing Rule diubah.');
     }
 
@@ -73,6 +75,7 @@ class RoutingRuleController extends Controller
             $routing_rule->is_active = true; $routing_rule->save();
             $this->audit->recordActivated($routing_rule);
         }
+        \App\Services\RoutingRuleService::forget((int) $routing_rule->idtblsource_app, (int) $routing_rule->idtbldocument_type);
         return back()->with('status', 'Status routing rule diubah.');
     }
 

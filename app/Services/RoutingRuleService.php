@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\TblFlowVersion;
 use App\Models\TblRoutingRule;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -30,11 +31,17 @@ class RoutingRuleService
         int $idtbldocument_type,
         array $context
     ): TblFlowVersion {
-        $rules = TblRoutingRule::where('idtblsource_app', $idtblsource_app)
-            ->where('idtbldocument_type', $idtbldocument_type)
-            ->where('is_active', 1)
-            ->orderBy('priority_no')
-            ->get();
+        // Daftar rule adalah config statis → cache. Evaluasi kondisi & resolusi
+        // versi ACTIVE tetap live agar deploy langsung berlaku (#110).
+        $rules = Cache::remember(
+            self::cacheKey($idtblsource_app, $idtbldocument_type),
+            600,
+            fn () => TblRoutingRule::where('idtblsource_app', $idtblsource_app)
+                ->where('idtbldocument_type', $idtbldocument_type)
+                ->where('is_active', 1)
+                ->orderBy('priority_no')
+                ->get()
+        );
 
         foreach ($rules as $rule) {
             if (! $this->condEval->evaluate($rule->condition_json ?: [], $context)) {
@@ -64,5 +71,16 @@ class RoutingRuleService
         throw new \RuntimeException(
             "Tidak ada routing rule yang cocok untuk source_app #{$idtblsource_app} document_type #{$idtbldocument_type}."
         );
+    }
+
+    private static function cacheKey(int $sourceApp, int $docType): string
+    {
+        return "routing_rules:{$sourceApp}:{$docType}";
+    }
+
+    /** Invalidasi cache rule untuk (source_app, doc_type). Dipanggil saat rule berubah. */
+    public static function forget(int $sourceApp, int $docType): void
+    {
+        Cache::forget(self::cacheKey($sourceApp, $docType));
     }
 }

@@ -48,9 +48,11 @@ class FlowBuilderSaveService
         }
 
         $errors = [];
+        // Snapshot diagram SEBELUM perubahan untuk audit diff (#101)
+        $beforeDiagram = $version->diagram_json;
 
         try {
-            DB::transaction(function () use ($version, $payload, &$errors) {
+            DB::transaction(function () use ($version, $payload, &$errors, $beforeDiagram) {
 
                 $nodes          = $payload['nodes']            ?? [];
                 $edges          = $payload['edges']            ?? [];
@@ -276,17 +278,21 @@ class FlowBuilderSaveService
                 // -------------------------------------------------------
                 // Audit
                 // -------------------------------------------------------
-                $this->audit->recordEvent(
+                // Audit dengan before/after diagram_json agar perubahan routing/approver
+                // dapat direkonstruksi (#101).
+                $this->audit->recordChange(
                     entityType: 'FLOW_BUILDER',
                     entityId:   $version->idtblflow_version,
                     eventCode:  'SAVE_BUILDER',
-                    message:    "Builder saved: v{$version->version_no} ({$version->version_name}). Nodes: " . count($nodes) . ", Edges: " . count($edges) . ".",
+                    oldValues:  ['diagram_json' => $beforeDiagram],
                     newValues:  [
                         'node_count'    => count($nodes),
                         'edge_count'    => count($edges),
                         'deleted_nodes' => count($deletedNodeIds),
                         'deleted_edges' => count($deletedEdgeIds),
+                        'diagram_json'  => $updateData['diagram_json'] ?? $beforeDiagram,
                     ],
+                    message:    "Builder saved: v{$version->version_no} ({$version->version_name}). Nodes: " . count($nodes) . ", Edges: " . count($edges) . ".",
                 );
             });
 
