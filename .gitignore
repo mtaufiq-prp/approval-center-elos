@@ -20,3 +20,5 @@ yarn-error.log
 desktop.ini
 *.zip
 /storage/logs/*.log
+CLAUDE.md
+DEPLOYMENT_GUIDE.md
