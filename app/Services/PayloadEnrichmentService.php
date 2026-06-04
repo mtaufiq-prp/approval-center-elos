@@ -32,10 +32,17 @@ use Illuminate\Support\Facades\Log;
  */
 class PayloadEnrichmentService
 {
-    // User ref yang fixed (single user)
-    private const NRM_REF = '11990056'; // JULIUS KURATA
-    private const CEO_REF = '1030018'; // KRIS RIANTO ADIDARMA
-    private const PKG_REF = '11130476'; // HENDRI GUNAWAN
+    // User ref yang fixed (single user) — dapat di-override via env SFA_NRM_REF, SFA_CEO_REF, SFA_PKG_REF
+    private string $nrmRef;
+    private string $ceoRef;
+    private string $pkgRef;
+
+    public function __construct()
+    {
+        $this->nrmRef = env('SFA_NRM_REF', '11990056'); // default: JULIUS KURATA
+        $this->ceoRef = env('SFA_CEO_REF', '1030018');  // default: KRIS RIANTO ADIDARMA
+        $this->pkgRef = env('SFA_PKG_REF', '11130476'); // default: HENDRI GUNAWAN
+    }
 
     /**
      * Enrich context_json dengan _computed fields.
@@ -81,19 +88,20 @@ class PayloadEnrichmentService
                 }
             }
 
-            // ── 4. PMM & PD berdasarkan detail.ph ───────────────────────
-            $ph = $this->extractFirstPh($details);
-            if ($ph) {
-                $computed['product_ph'] = $ph;
+            // ── 4. PMM & PD berdasarkan detail.ph (semua PH unik, bukan hanya pertama) ─
+            $phList = $this->extractUniquePhs($details);
+            $computed['product_ph_list'] = $phList;
+            foreach ($phList as $ph) {
                 [$pmmRef, $pdRef] = $this->lookupProductManagerByPh($ph);
-                if ($pmmRef) $computed['pmm_user_ref'] = $pmmRef;
-                if ($pdRef)  $computed['pd_user_ref']  = $pdRef;
+                // Ambil PMM/PD dari PH pertama yang berhasil resolve
+                if ($pmmRef && empty($computed['pmm_user_ref'])) $computed['pmm_user_ref'] = $pmmRef;
+                if ($pdRef  && empty($computed['pd_user_ref']))  $computed['pd_user_ref']  = $pdRef;
             }
 
-            // ── 5. Single users (fixed) ─────────────────────────────────
-            $computed['nrm_user_ref'] = self::NRM_REF;
-            $computed['ceo_user_ref'] = self::CEO_REF;
-            $computed['pkg_user_ref'] = self::PKG_REF;
+            // ── 5. Single users (dari env, dengan fallback default) ──────
+            $computed['nrm_user_ref'] = $this->nrmRef;
+            $computed['ceo_user_ref'] = $this->ceoRef;
+            $computed['pkg_user_ref'] = $this->pkgRef;
 
         } catch (\Throwable $e) {
             Log::warning("PayloadEnrichmentService: partial enrichment error: {$e->getMessage()}");
@@ -140,15 +148,18 @@ class PayloadEnrichmentService
     }
 
     /**
-     * Ambil PH pertama yang tidak kosong dari detail
+     * Ambil semua PH unik yang tidak kosong dari detail
      */
-    private function extractFirstPh(array $details): ?string
+    private function extractUniquePhs(array $details): array
     {
+        $phs = [];
         foreach ($details as $row) {
             $ph = trim($row['ph'] ?? '');
-            if ($ph !== '') return $ph;
+            if ($ph !== '' && ! in_array($ph, $phs, true)) {
+                $phs[] = $ph;
+            }
         }
-        return null;
+        return $phs;
     }
 
     /**

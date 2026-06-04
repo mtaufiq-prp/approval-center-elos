@@ -1003,6 +1003,17 @@ window.togSec = function(el) {
     if (sc) sc.classList.toggle('col');
 };
 
+// XSS-safe string escape untuk interpolasi ke innerHTML
+function esc(s) {
+    if (s == null) return '';
+    return String(s)
+        .replace(/&/g,'&amp;')
+        .replace(/</g,'&lt;')
+        .replace(/>/g,'&gt;')
+        .replace(/"/g,'&quot;')
+        .replace(/'/g,'&#39;');
+}
+
 function lkBan() {
     return CFG.lk
         ? '<div style="background:#3d1c02;border-radius:5px;padding:5px 8px;font-size:11px;color:#ff7b72;margin-bottom:8px"><i class="bi bi-lock-fill"></i> Read-only (locked)</div>'
@@ -1043,7 +1054,7 @@ function showNodePanel(node) {
         '<div class="psc">'+
             '<div class="fg"><label>Node Code *</label><input id="pnc" value="'+esc(d.node_code||'')+'" '+ro+' oninput="markDirty()"></div>'+
             '<div class="fg"><label>Node Name *</label><input id="psn" value="'+esc(d.step_name||'')+'" '+ro+' oninput="markDirty()"></div>'+
-            '<div class="fg"><label>Node Type</label><input value="'+d.step_type+'" readonly style="opacity:.5"></div>'+
+            '<div class="fg"><label>Node Type</label><input value="'+esc(d.step_type)+'" readonly style="opacity:.5"></div>'+
             (isD ? '<div class="fg"><label>Gateway Type</label><select id="pgw" '+di+' onchange="markDirty()">'+selOpts(['EXCLUSIVE','INCLUSIVE','PARALLEL'],d.gateway_type)+'</select></div>' : '')+
             (isA ? '<div class="fg"><label>Approval Mode</label><select id="pam" '+di+' onchange="markDirty()">'+selOpts(['ANY','ALL','SEQUENTIAL'],d.approval_mode)+'</select></div>' : '')+
             (isA ? '<div class="fg"><label>SLA Hours</label><input id="psh" type="number" data-val="'+( d.sla_hours !== null && d.sla_hours !== undefined ? d.sla_hours : '' )+'" placeholder="kosong=tidak ada" '+ro+' oninput="markDirty()"></div>' : '')+
@@ -1054,8 +1065,7 @@ function showNodePanel(node) {
         '<div class="pst col" onclick="togSec(this)">Condition JSON</div>'+
         '<div class="psc col">'+
             '<div class="fg"><label>condition_json (guard opsional)</label>'+
-                '<textarea id="pcj" style="font-family:monospace;min-height:70px" '+ro+' oninput="markDirty()">'+
-                (d.condition_json ? JSON.stringify(d.condition_json,null,2) : '')+'</textarea>'+
+                '<textarea id="pcj" style="font-family:monospace;min-height:70px" '+ro+' oninput="markDirty()"></textarea>'+
             '</div>'+
             '<div style="display:flex;gap:5px;margin-top:3px">'+
                 '<button class="badd" onclick="bfJ(\'pcj\')">Beautify</button>'+
@@ -1083,6 +1093,9 @@ function showNodePanel(node) {
         : '');
     // Isi nilai numerik (data-val → value) setelah innerHTML diset
     fillDataVals(document.getElementById('rpb'));
+    // Set condition_json via textContent (bukan innerHTML) untuk cegah XSS (#21)
+    var pcjEl = document.getElementById('pcj');
+    if (pcjEl) pcjEl.textContent = d.condition_json ? JSON.stringify(d.condition_json,null,2) : '';
     autoResolveJTLabels();
 }
 
@@ -1120,8 +1133,7 @@ function showEdgePanel(edge) {
         '<div class="pst col" onclick="togSec(this)">Condition JSON</div>'+
         '<div class="psc col">'+
             '<div class="fg"><label>condition_json (kosong=always true)</label>'+
-                '<textarea id="ecj" style="font-family:monospace;min-height:80px" '+ro+' oninput="markDirty()">'+
-                (d.condition_json ? JSON.stringify(d.condition_json,null,2) : '')+'</textarea>'+
+                '<textarea id="ecj" style="font-family:monospace;min-height:80px" '+ro+' oninput="markDirty()"></textarea>'+
                 '<small>{"op":"&gt;","field":"nilai","value":10000000}</small></div>'+
             '<div style="display:flex;gap:5px;margin-top:3px">'+
                 '<button class="badd" onclick="bfJ(\'ecj\')">Beautify</button>'+
@@ -1138,6 +1150,9 @@ function showEdgePanel(edge) {
     '</div>' : '');
     // Isi nilai numerik (data-val → value) setelah innerHTML diset
     fillDataVals(document.getElementById('rpb'));
+    // Set condition_json via textContent (#21)
+    var ecjEl = document.getElementById('ecj');
+    if (ecjEl) ecjEl.textContent = d.condition_json ? JSON.stringify(d.condition_json,null,2) : '';
 }
 
 // ============================================================
