@@ -381,6 +381,10 @@ class FlowEngineService
             ->orderBy('priority_no')
             ->get();
 
+        // Pre-load semua step target sekaligus untuk hilangkan N+1 (#25)
+        $stepIds   = $outgoing->pluck('idtblflow_step_to')->filter()->unique()->values();
+        $stepCache = TblFlowStep::whereIn('idtblflow_step', $stepIds)->get()->keyBy('idtblflow_step');
+
         foreach ($outgoing as $edge) {
             $result = empty($edge->condition_json) || $this->condEval->evaluate($edge->condition_json, $context);
             $this->logRoute($request->idtblapproval_request, $instance->idtblprocess_instance,
@@ -389,14 +393,14 @@ class FlowEngineService
                 $node->step_type, $actionCode, $result,
                 "Evaluasi edge {$edge->transition_code}: " . ($result ? 'MATCH' : 'SKIP'));
             if ($result) {
-                return $edge->idtblflow_step_to ? TblFlowStep::find($edge->idtblflow_step_to) : null;
+                return $edge->idtblflow_step_to ? $stepCache->get($edge->idtblflow_step_to) : null;
             }
         }
 
         // Default transition
         $default = $outgoing->where('is_default', true)->sortBy('priority_no')->first();
         if ($default) {
-            return $default->idtblflow_step_to ? TblFlowStep::find($default->idtblflow_step_to) : null;
+            return $default->idtblflow_step_to ? $stepCache->get($default->idtblflow_step_to) : null;
         }
 
         return null;

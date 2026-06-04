@@ -100,19 +100,36 @@ class FlowBuilderSaveService
                 // -------------------------------------------------------
                 $nodeIdMap = []; // 'node_123' atau 'node_new_abc' → idtblflow_step
 
+                $validStepTypes    = ['START','END','APPROVAL','DECISION','REVIEW','NOTIFICATION','SYSTEM'];
+                $validGatewayTypes = ['NONE','EXCLUSIVE','INCLUSIVE','PARALLEL'];
+                $validApprModes    = ['ANY','ALL','SEQUENTIAL'];
+
                 foreach ($nodes as $n) {
                     $frontendId   = $n['id'];
                     $dbId         = $n['idtblflow_step'] ?? null;
                     $data         = $n['data'] ?? [];
                     $position     = $n['position'] ?? ['x' => 100, 'y' => 100];
 
+                    // Validasi enum per-field (#18)
+                    $rawStepType = strtoupper($data['step_type'] ?? $n['type'] ?? 'APPROVAL');
+                    if (! in_array($rawStepType, $validStepTypes, true)) {
+                        throw new \InvalidArgumentException("step_type '{$rawStepType}' tidak valid untuk node '{$n['id']}'.");
+                    }
+                    $rawGateway  = strtoupper($data['gateway_type'] ?? 'NONE');
+                    if (! in_array($rawGateway, $validGatewayTypes, true)) $rawGateway = 'NONE';
+                    $rawApprMode = strtoupper(($data['approval_mode'] ?? null) ?: 'ANY');
+                    if (! in_array($rawApprMode, $validApprModes, true)) $rawApprMode = 'ANY';
+                    if (empty(trim($data['node_code'] ?? ''))) {
+                        throw new \InvalidArgumentException("node_code wajib diisi untuk node '{$n['id']}'.");
+                    }
+
                     $stepData = [
                         'node_code'    => $n['node_code']   ?? ($data['node_code'] ?? 'NODE'),
                         'step_code'    => $n['node_code']   ?? ($data['node_code'] ?? 'NODE'),
                         'step_name'    => $data['step_name'] ?? $n['label'] ?? 'Node',
-                        'step_type'    => $data['step_type'] ?? $n['type'] ?? 'APPROVAL',
-                        'gateway_type' => $data['gateway_type'] ?? 'NONE',
-                        'approval_mode'=> ($data['approval_mode'] ?? null) ?: 'ANY',
+                        'step_type'    => $rawStepType,
+                        'gateway_type' => $rawGateway,
+                        'approval_mode'=> $rawApprMode,
                         'reject_behavior' => $data['reject_behavior'] ?? 'END_REJECTED',
                         'sla_hours'    => $data['sla_hours']    ?: null,
                         'instruction'  => $data['instruction']  ?: null,
@@ -145,6 +162,11 @@ class FlowBuilderSaveService
                 // PASS 4 — Upsert edges
                 // Resolve source/target dari nodeIdMap
                 // -------------------------------------------------------
+                // Pre-load semua step yang terlibat di edges agar tidak N+1 (#26)
+                $allStepIds = collect($nodeIdMap)->values()->filter()->unique();
+                $stepCodeMap = TblFlowStep::whereIn('idtblflow_step', $allStepIds)
+                    ->pluck('node_code', 'idtblflow_step');
+
                 foreach ($edges as $e) {
                     $frontendEdgeId = $e['id'];
                     $dbEdgeId       = $e['idtblflow_transition'] ?? null;
@@ -165,11 +187,9 @@ class FlowBuilderSaveService
                             ?? (preg_match('/node_(\d+)/', $targetKey, $m) ? (int) $m[1] : null);
                     }
 
-                    // Auto-generate transition_code jika kosong
-                    $fromCode = TblFlowStep::find($sourceDbId)?->node_code ?? 'FROM';
-                    $toCode   = $targetDbId
-                        ? (TblFlowStep::find($targetDbId)?->node_code ?? 'TO')
-                        : 'END';
+                    // Auto-generate transition_code — gunakan cache, bukan find() (#26)
+                    $fromCode = $stepCodeMap->get($sourceDbId) ?? 'FROM';
+                    $toCode   = $targetDbId ? ($stepCodeMap->get($targetDbId) ?? 'TO') : 'END';
                     $autoCode = strtoupper("{$fromCode}_TO_{$toCode}");
 
                     $edgeData = [

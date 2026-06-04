@@ -32,6 +32,8 @@ use Illuminate\Support\Facades\Log;
  */
 class AssigneeResolverService
 {
+    // In-memory cache per request untuk JOBTITLE yang sama (#44)
+    private array $jobtitleCache = [];
     public function __construct(
         private ConditionEvaluatorService $condEval,
     ) {}
@@ -146,6 +148,9 @@ class AssigneeResolverService
     private function resolveJobTitle(?string $jobTitleId): Collection
     {
         if (! $jobTitleId) return collect();
+        if (isset($this->jobtitleCache[$jobTitleId])) {
+            return $this->jobtitleCache[$jobTitleId];
+        }
         try {
             $rows = \Illuminate\Support\Facades\DB::select(
                 "SELECT employeeno FROM db_master.tbemployeeit WHERE jobtitleid = ? AND activestatus = 1",
@@ -155,8 +160,9 @@ class AssigneeResolverService
                 Log::warning("AssigneeResolver JOBTITLE: tidak ada employee aktif untuk jobtitleid={$jobTitleId}");
                 return collect();
             }
-            $npks = array_map(fn($r) => $r->employeeno, $rows);
-            return TblUser::where("is_active", 1)->whereIn("user_ref", $npks)->get();
+            $npks   = array_map(fn($r) => $r->employeeno, $rows);
+            $result = TblUser::where("is_active", 1)->whereIn("user_ref", $npks)->get();
+            return $this->jobtitleCache[$jobTitleId] = $result;
         } catch (\Throwable $e) {
             // Re-throw agar FlowEngine bisa set instance ERROR dan job bisa di-retry
             Log::error("AssigneeResolver JOBTITLE({$jobTitleId}) DB error: {$e->getMessage()}");

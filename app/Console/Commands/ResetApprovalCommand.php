@@ -2,6 +2,8 @@
 
 namespace App\Console\Commands;
 
+use App\Services\AssigneeResolverService;
+use App\Services\ConditionEvaluatorService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use App\Models\TblApprovalRequest;
@@ -180,35 +182,11 @@ class ResetApprovalCommand extends Command
             $req->save();
 
             // 6. Buat task baru yang OPEN di target node
-            // Resolve assignee dari assignee rules
-            $assigneeRules = \App\Models\TblStepAssigneeRule::where('idtblflow_step', $targetStep->idtblflow_step)
-                ->where('is_active', 1)->get();
-
-            $assigneeUser = null;
-            $context = $req->context_json ?? [];
-
-            foreach ($assigneeRules as $rule) {
-                if ($rule->assignee_type === 'USER') {
-                    $assigneeUser = \App\Models\TblUser::where('user_ref', $rule->assignee_value)->first();
-                    break;
-                } elseif ($rule->assignee_type === 'FIELD_USER') {
-                    $fieldPath = $rule->assignee_value;
-                    $val = data_get($context, $fieldPath);
-                    if ($val) {
-                        $assigneeUser = \App\Models\TblUser::where('user_ref', $val)->first();
-                        break;
-                    }
-                } elseif ($rule->assignee_type === 'JOBTITLE') {
-                    $rows = DB::select(
-                        "SELECT employeeno FROM db_master.tbemployeeit WHERE jobtitleid = ? AND activestatus = 1 LIMIT 1",
-                        [$rule->assignee_value]
-                    );
-                    if (! empty($rows)) {
-                        $assigneeUser = \App\Models\TblUser::where('user_ref', $rows[0]->employeeno)->first();
-                    }
-                    break;
-                }
-            }
+            // Delegasikan resolusi assignee ke AssigneeResolverService (#19)
+            $context  = $req->context_json ?? [];
+            $resolver = new AssigneeResolverService(new ConditionEvaluatorService());
+            $candidates = $resolver->resolve($targetStep, $context);
+            $assigneeUser = $candidates->first();
 
             $taskNo = 'TSK-' . $targetStep->node_code . '-' . $req->idtblapproval_request . '-RST-' . now()->format('His');
             while (TblTask::where('task_no', $taskNo)->exists()) {
