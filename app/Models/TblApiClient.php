@@ -15,7 +15,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * - Kolom `client_secret_hash` menyimpan AES-encrypted secret (bukan hash
  *   one-way) agar server bisa decrypt untuk verifikasi HMAC SHA256.
  * - Di-hidden dari serialisasi & TIDAK fillable; pengisian/rotasi
- *   melalui service khusus (akan dibuat di Tahap 7 / Tahap 5 admin UI).
+ *   melalui service khusus (tersedia di ApiClientSecretService).
  * - Jangan pernah expose ke UI, log, response API, atau audit trail.
  */
 class TblApiClient extends Model

@@ -224,7 +224,7 @@ class ResetApprovalCommand extends Command
                 'idtbluser_assigned'    => $assigneeUser?->idtbluser,
                 'due_at'                => $targetStep->sla_hours
                     ? now()->addHours($targetStep->sla_hours)
-                    : now()->addDays(3),
+                    : null, // null = tanpa deadline, konsisten dengan FlowEngineService
             ]);
 
             // Buat candidates untuk BMH (bisa multiple)

@@ -18,15 +18,18 @@ class DashboardController extends Controller
         $user = auth()->user();
 
         // --- Inbox count untuk navbar ---
+        // Bangun predikat inbox sekali, dipakai untuk count DAN list (#43)
+        $myTaskQuery = fn() => TblTask::where('task_status', 'OPEN')
+            ->where(fn($q) => $q
+                ->where('idtbluser_assigned', $user->idtbluser)
+                ->orWhereHas('candidates', fn($cq) =>
+                    $cq->where('idtbluser', $user->idtbluser)->where('is_active', 1)
+                )
+            );
+
         $inboxCount = 0;
         if ($user->hasAnyRole('APPROVER', 'ADMIN_APPROVAL')) {
-            $inboxCount = TblTask::where('task_status', 'OPEN')
-                ->where(function ($q) use ($user) {
-                    $q->where('idtbluser_assigned', $user->idtbluser)
-                      ->orWhereHas('candidates', fn($cq) =>
-                          $cq->where('idtbluser', $user->idtbluser)->where('is_active', 1)
-                      );
-                })->count();
+            $inboxCount = $myTaskQuery()->count();
         }
 
         // --- KPI global (admin) ---
@@ -44,7 +47,6 @@ class DashboardController extends Controller
             $kpi['overdue_tasks']     = TblTask::where('task_status', 'OPEN')
                                             ->where('due_at', '<', now())->count();
 
-            // Status breakdown 7 hari terakhir
             $kpi['status_breakdown']  = TblApprovalRequest::select('request_status', DB::raw('count(*) as total'))
                                             ->where('created_at', '>=', now()->subDays(7))
                                             ->groupBy('request_status')
@@ -52,17 +54,11 @@ class DashboardController extends Controller
                                             ->toArray();
         }
 
-        // --- My tasks (approver) ---
+        // --- My tasks (approver) — reuse query builder (#43) ---
         $myTasks = [];
         if ($user->hasAnyRole('APPROVER', 'ADMIN_APPROVAL')) {
-            $myTasks = TblTask::with(['approvalRequest', 'flowStep'])
-                ->where('task_status', 'OPEN')
-                ->where(function ($q) use ($user) {
-                    $q->where('idtbluser_assigned', $user->idtbluser)
-                      ->orWhereHas('candidates', fn($cq) =>
-                          $cq->where('idtbluser', $user->idtbluser)->where('is_active', 1)
-                      );
-                })
+            $myTasks = $myTaskQuery()
+                ->with(['approvalRequest', 'flowStep'])
                 ->orderBy('due_at')
                 ->limit(10)
                 ->get();

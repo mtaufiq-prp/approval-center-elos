@@ -134,7 +134,9 @@ class FlowVersionDeploymentService
 
             // Map old_step_id => new_step_id
             $stepMap = [];
-            $sourceSteps = TblFlowStep::where('idtblflow_version', $source->idtblflow_version)->get();
+            $sourceSteps = TblFlowStep::where('idtblflow_version', $source->idtblflow_version)
+                ->with('activeAssigneeRules')
+                ->get();
             foreach ($sourceSteps as $s) {
                 $new = TblFlowStep::create([
                     'idtblflow_version'  => $newVersion->idtblflow_version,
@@ -161,9 +163,9 @@ class FlowVersionDeploymentService
                 $stepMap[$s->idtblflow_step] = $new->idtblflow_step;
             }
 
-            // Assignee Rules
+            // Assignee Rules — gunakan relasi yang sudah di-eager-load
             foreach ($sourceSteps as $s) {
-                $rules = TblStepAssigneeRule::where('idtblflow_step', $s->idtblflow_step)->get();
+                $rules = $s->activeAssigneeRules;
                 foreach ($rules as $r) {
                     TblStepAssigneeRule::create([
                         'idtblflow_step' => $stepMap[$s->idtblflow_step],

@@ -19,7 +19,7 @@ use Illuminate\Notifications\Notifiable;
  * Catatan auth:
  * - Login menggunakan `user_ref` ATAU `email` (lihat LoginController).
  * - Password disimpan di kolom `password` (bcrypt) — kolom hasil
- *   migration ALTER tbluser di Tahap 2.
+ *   migration ALTER tbluser.
  * - Field auth tambahan: must_change_password, last_login_at,
  *   password_changed_at, remember_token.
  *
@@ -46,7 +46,7 @@ class TblUser extends Authenticatable
         'idtblposition',
         'idtbluser_superior',
         'is_active',
-        // field auth (ditambahkan via migration ALTER Tahap 2)
+        // field auth (ditambahkan via migration ALTER)
         'password',
         'must_change_password',
         'last_login_at',
@@ -99,7 +99,7 @@ class TblUser extends Authenticatable
     }
 
     // ---------------------------------------------------------------------
-    // ROLE HELPERS (dipakai EnsureUserHasRole middleware - Tahap 4)
+    // ROLE HELPERS (dipakai EnsureUserHasRole middleware)
     // ---------------------------------------------------------------------
 
     /**

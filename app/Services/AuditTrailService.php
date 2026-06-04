@@ -66,7 +66,7 @@ class AuditTrailService
 
         return TblAuditEvent::create([
             'entity_type'     => $entityType,
-            'entity_id'       => $entityId !== null ? (int) $entityId : null,
+            'entity_id'       => $entityId,
             'event_code'      => $eventCode,
             'event_message'   => $message ? mb_substr($message, 0, 500) : null,
             'old_value_json'  => $oldValues !== null ? $this->redact($oldValues, $redactFields) : null,
@@ -102,8 +102,9 @@ class AuditTrailService
         array $originalValues,
         ?string $message = null,
         array $extraRedact = []
-    ): TblAuditEvent {
+    ): ?TblAuditEvent {
         $changes = $model->getChanges();      // hanya yg berubah setelah save()
+        if (empty($changes)) return null;     // #36: jangan tulis audit kosong
         $oldDiff = array_intersect_key($originalValues, $changes);
 
         return $this->recordChange(

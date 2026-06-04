@@ -149,9 +149,13 @@ class FlowEngineService
             $instance = TblProcessInstance::where('idtblprocess_instance', $task->idtblprocess_instance)
                             ->lockForUpdate()->firstOrFail();
             $request  = TblApprovalRequest::findOrFail($instance->idtblapproval_request);
-            $token    = TblProcessToken::where('idtblprocess_instance', $instance->idtblprocess_instance)
+            $token = TblProcessToken::where('idtblprocess_instance', $instance->idtblprocess_instance)
                             ->where('token_status', TblProcessToken::STATUS_ACTIVE)
+                            ->orderBy('idtblprocess_token')
                             ->first();
+            if (! $token) {
+                Log::warning("FlowEngine: tidak ada ACTIVE token untuk instance #{$instance->idtblprocess_instance}.");
+            }
             $currentNode = TblFlowStep::findOrFail($task->idtblflow_step);
 
             // Catat ke tblaction_log untuk audit trail keputusan per request
@@ -309,7 +313,7 @@ class FlowEngineService
 
         $outgoing = TblFlowTransition::where('idtblflow_step_from', $node->idtblflow_step)
             ->where('is_active', 1)
-            ->where(fn($q) => $q->whereNull('action_code')->orWhere('action_code', $actionCode ?? ''))
+            ->where(fn($q) => $q->whereNull('action_code')->orWhere(fn($q2) => $actionCode ? $q2->where('action_code', $actionCode) : $q2->whereRaw('0')))
             ->orderBy('priority_no')
             ->get();
 
@@ -373,7 +377,7 @@ class FlowEngineService
 
         $outgoing = TblFlowTransition::where('idtblflow_step_from', $node->idtblflow_step)
             ->where('is_active', 1)
-            ->where(fn($q) => $q->whereNull('action_code')->orWhere('action_code', $actionCode ?? ''))
+            ->where(fn($q) => $q->whereNull('action_code')->orWhere(fn($q2) => $actionCode ? $q2->where('action_code', $actionCode) : $q2->whereRaw('0')))
             ->orderBy('priority_no')
             ->get();
 
