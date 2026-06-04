@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\TblSlaEscalationLog;
 use App\Models\TblTask;
+use App\Services\NotificationService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -79,9 +80,22 @@ class SlaEscalationJob implements ShouldQueue
                 'status'                => 'TRIGGERED',
             ]);
 
+            // Kirim notifikasi eskalasi ke approver/kandidat aktif (#89)
+            $notifier  = app(NotificationService::class);
+            $recipients = $task->candidates
+                ->where('is_active', 1)
+                ->map(fn($c) => $c->user)
+                ->filter();
+            if ($recipients->isEmpty() && $task->assignedUser) {
+                $recipients = collect([$task->assignedUser]);
+            }
+            foreach ($recipients as $user) {
+                $notifier->notifyEscalation($task, $user, $level, $hoursOverdue);
+            }
+
             Log::warning(
                 "SLA Escalation L{$level}: task #{$task->idtbltask} | req {$reqNo} | " .
-                "step {$stepName} | overdue {$hoursOverdue} jam"
+                "step {$stepName} | overdue {$hoursOverdue} jam | notifikasi: {$recipients->count()}"
             );
 
         } catch (\Throwable $e) {

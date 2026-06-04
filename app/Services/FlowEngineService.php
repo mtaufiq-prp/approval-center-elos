@@ -451,6 +451,7 @@ class FlowEngineService
         }
 
         // Buat satu task per kandidat (task_no WAJIB di-generate; kolom NOT NULL)
+        $notifier = app(\App\Services\NotificationService::class);
         $seq = 0;
         foreach ($candidates as $candidate) {
             $seq++;
@@ -479,6 +480,9 @@ class FlowEngineService
                 'priority_no'      => $seq,
                 'is_active'        => 1,
             ]);
+
+            // Enqueue notifikasi "ada task baru" untuk approver (#88)
+            $notifier->notifyTaskAssigned($task, $candidate);
         }
 
         $this->logRoute($request->idtblapproval_request, $instance->idtblprocess_instance,

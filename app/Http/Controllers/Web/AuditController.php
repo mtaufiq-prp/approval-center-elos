@@ -148,13 +148,14 @@ class AuditController extends Controller
             return back()->with('error', 'Hanya callback FAILED atau DEAD yang bisa di-retry.');
         }
 
-        // Reset agar bisa diproses ulang
-        $outbox->status       = 'PENDING';
+        // Reset agar bisa diproses ulang (termasuk retry_count, agar tak langsung skip)
+        $outbox->status        = 'PENDING';
+        $outbox->retry_count   = 0;
         $outbox->next_retry_at = now();
         $outbox->save();
 
-        // Dispatch langsung (manual retry)
-        SendCallbackJob::dispatch($outbox);
+        // Dispatch dengan int ID sesuai konstruktor job (#99)
+        SendCallbackJob::dispatch($outbox->idtblcallback_outbox);
 
         return back()->with('status', "Callback #{$outbox->idtblcallback_outbox} akan diproses ulang.");
     }
