@@ -19,16 +19,15 @@ class CallbackTestController extends Controller
         $payload = $request->all();
 
         Log::info('CallbackTest received', [
-            'client_key' => $client?->client_key,
-            'ip'         => $request->ip(),
-            'payload'    => $payload,
+            'client_key'   => $client?->client_key,
+            'ip'           => $request->ip(),
+            'payload_keys' => array_keys($payload), // log struktur saja, bukan isi
         ]);
 
         return response()->json([
             'success'    => true,
             'message'    => 'Callback test diterima.',
             'client_key' => $client?->client_key,
-            'received'   => $payload,
             'timestamp'  => now()->toIso8601String(),
         ]);
     }

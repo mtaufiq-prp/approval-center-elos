@@ -158,8 +158,9 @@ class AssigneeResolverService
             $npks = array_map(fn($r) => $r->employeeno, $rows);
             return TblUser::where("is_active", 1)->whereIn("user_ref", $npks)->get();
         } catch (\Throwable $e) {
-            Log::warning("AssigneeResolver JOBTITLE({$jobTitleId}): {$e->getMessage()}");
-            return collect();
+            // Re-throw agar FlowEngine bisa set instance ERROR dan job bisa di-retry
+            Log::error("AssigneeResolver JOBTITLE({$jobTitleId}) DB error: {$e->getMessage()}");
+            throw new \RuntimeException("Gagal resolve JOBTITLE {$jobTitleId}: {$e->getMessage()}", 0, $e);
         }
     }
 

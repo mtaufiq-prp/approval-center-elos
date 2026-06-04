@@ -28,7 +28,8 @@ class DevAdminUserSeeder extends Seeder
         }
 
         $now      = now('Asia/Jakarta')->format('Y-m-d H:i:s.v');
-        $password = Hash::make('admin123');
+        $rawPass  = bin2hex(random_bytes(12)); // random 24-char hex, ditampilkan sekali
+        $password = Hash::make($rawPass);
 
         // 1. Insert / update user admin
         DB::statement(
@@ -67,6 +68,6 @@ class DevAdminUserSeeder extends Seeder
             [$userId, $roleId, $now]
         );
 
-        $this->command->info('Admin dev siap: user_ref=ADMIN_DEV password=admin123 (wajib ganti).');
+        $this->command->info("Admin dev siap: user_ref=ADMIN_DEV password={$rawPass} (wajib ganti — catat sebelum jendela ini ditutup).");
     }
 }

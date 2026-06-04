@@ -145,7 +145,7 @@ class ApprovalSubmitController extends Controller
             return response()->json([
                 'success' => false,
                 'error'   => 'SUBMIT_ERROR',
-                'message' => $e->getMessage(),
+                'message' => 'Terjadi kesalahan saat memproses request. Hubungi administrator.',
             ], 422);
         }
     }

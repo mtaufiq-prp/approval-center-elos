@@ -96,13 +96,15 @@ class FlowBuilderController extends Controller
 
         $result = $this->validationService->validate($flow_version);
 
-        // Simpan hasil validasi ke DB
-        $flow_version->validation_status  = $result->isValid
-            ? TblFlowVersion::VALIDATION_VALID
-            : TblFlowVersion::VALIDATION_INVALID;
-        $flow_version->validation_message = $result->summary();
-        $flow_version->validated_at       = now();
-        $flow_version->save();
+        // Simpan hasil validasi hanya jika versi belum terkunci (DRAFT/UNDER_REVIEW)
+        if (! $flow_version->isLocked()) {
+            $flow_version->validation_status  = $result->isValid
+                ? TblFlowVersion::VALIDATION_VALID
+                : TblFlowVersion::VALIDATION_INVALID;
+            $flow_version->validation_message = $result->summary();
+            $flow_version->validated_at       = now();
+            $flow_version->save();
+        }
 
         $this->audit->recordEvent(
             entityType: 'FLOW_BUILDER',

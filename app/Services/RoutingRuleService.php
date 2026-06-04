@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\TblFlowVersion;
 use App\Models\TblRoutingRule;
+use Illuminate\Support\Facades\Log;
 
 /**
  * RoutingRuleService
@@ -46,7 +47,8 @@ class RoutingRuleService
                 if ($version && $version->status === TblFlowVersion::STATUS_ACTIVE) {
                     return $version;
                 }
-                // Version di-pin tapi sudah tidak ACTIVE → skip (next rule)
+                // Version di-pin tapi sudah tidak ACTIVE → log warning, skip ke rule berikutnya
+                Log::warning("RoutingRule #{$rule->idtblrouting_rule}: flow version #{$rule->idtblflow_version} di-pin tapi status bukan ACTIVE ('{$version?->status}'). Skip.");
                 continue;
             }
 

@@ -14,7 +14,7 @@ use Illuminate\Support\Facades\Route;
 |          (Tahap 7 implementasi penuh).
 */
 
-Route::prefix('v1')->middleware('api_client_auth')->group(function () {
+Route::prefix('v1')->middleware(['api_client_auth', 'throttle:60,1'])->group(function () {
 
     // Submit approval request
     Route::post('/approval/submit',

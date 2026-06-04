@@ -23,7 +23,7 @@ class ApprovalStatusController extends Controller
         if ($id = $request->route('approval_request_id') ?? $request->query('approval_request_id')) {
             $q->where('idtblapproval_request', (int) $id);
         } elseif ($docRef = $request->query('doc_ref')) {
-            $q->where('doc_ref', $docRef);
+            $q->where('source_request_id', $docRef);
             if ($dtId = $request->query('idtbldocument_type')) {
                 $q->where('idtbldocument_type', $dtId);
             }
@@ -46,8 +46,8 @@ class ApprovalStatusController extends Controller
         return response()->json([
             'success'             => true,
             'approval_request_id' => $req->idtblapproval_request,
-            'doc_ref'             => $req->doc_ref,
-            'status'              => $req->status,
+            'source_request_id'   => $req->source_request_id,
+            'status'              => $req->request_status,
             'submitted_at'        => optional($req->submitted_at)?->toIso8601String(),
             'pending_tasks'       => $pendingTasks,
         ]);

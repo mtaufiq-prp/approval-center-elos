@@ -164,7 +164,7 @@ class FlowEngineService
                 'actor_ref'              => $actor?->user_ref,
                 'action_code'            => strtoupper($actionCode),
                 'action_note'            => $comment,
-                'before_status'          => 'OPEN',
+                'before_status'          => $task->getOriginal('task_status') ?? $task->task_status,
                 'after_status'           => $taskStatus,
                 'idtblflow_step_before'  => $currentNode->idtblflow_step,
                 'client_ip'              => request()?->ip(),
@@ -414,15 +414,17 @@ class FlowEngineService
         }
 
         // Buat satu task per kandidat (task_no WAJIB di-generate; kolom NOT NULL)
-        foreach ($candidates as $idx => $candidate) {
+        $seq = 0;
+        foreach ($candidates as $candidate) {
+            $seq++;
             $taskNo = sprintf(
                 'TSK-%s-%d-%d-%s',
                 $node->node_code,
                 $request->idtblapproval_request,
-                $idx + 1,
-                substr((string) (microtime(true) * 1000), -10)
+                $seq,
+                substr(str_replace('.', '', (string) microtime(true)), -10)
             );
-            $task = TblTask::create([ 
+            $task = TblTask::create([
                 'task_no'                => $taskNo,
                 'idtblprocess_instance'  => $instance->idtblprocess_instance,
                 'idtblapproval_request'  => $request->idtblapproval_request,
@@ -437,7 +439,7 @@ class FlowEngineService
                 'task_id'          => $task->idtbltask,
                 'idtbluser'        => $candidate->idtbluser,
                 'candidate_source' => 'DIRECT',
-                'priority_no'      => $idx + 1,
+                'priority_no'      => $seq,
                 'is_active'        => 1,
             ]);
         }
@@ -577,6 +579,8 @@ class FlowEngineService
         string $message
     ): void {
         try {
+            $createdBy = request()->user()?->user_ref ?? 'SYSTEM';
+
             TblProcessRouteLog::create([
                 'idtblapproval_request' => $requestId,
                 'idtblprocess_instance' => $instanceId,
@@ -587,7 +591,7 @@ class FlowEngineService
                 'action_code'           => $actionCode,
                 'condition_result'      => $condResult,
                 'message'               => mb_substr($message, 0, 500),
-                'created_by'            => auth()->user()?->user_ref ?? 'SYSTEM',
+                'created_by'            => $createdBy,
             ]);
         } catch (\Throwable $e) {
             Log::error("FlowEngine route log failed: {$e->getMessage()}");
