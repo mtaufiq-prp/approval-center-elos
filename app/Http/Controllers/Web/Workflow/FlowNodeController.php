@@ -47,6 +47,7 @@ class FlowNodeController extends Controller
         $this->abortIfLocked($flow_version);
 
         $data = $request->validated();
+        $data = $this->mergeNodeConfig($data, null);
         $data['idtblflow_version'] = $flow_version->idtblflow_version;
         $data['condition_json']    = $this->parseConditionJson($data['condition_json_raw'] ?? null);
         // step_code = node_code (keduanya bermakna sama, step_code wajib NOT NULL di DB)
@@ -84,6 +85,7 @@ class FlowNodeController extends Controller
 
         $original = $flow_step->getOriginal();
         $data = $request->validated();
+        $data = $this->mergeNodeConfig($data, $flow_step);
         $data['condition_json'] = $this->parseConditionJson($data['condition_json_raw'] ?? null);
         // step_code selalu sync dengan node_code
         $data['step_code']       = $data['node_code'];
@@ -161,5 +163,48 @@ class FlowNodeController extends Controller
         if ($raw === null || trim($raw) === '') return null;
         $decoded = json_decode($raw, true);
         return (json_last_error() === JSON_ERROR_NONE) ? $decoded : null;
+    }
+
+    /**
+     * Bangun node_config_json dari input form (pertahankan key lain yang sudah ada):
+     *  - editable_fields_raw (textarea, 1 path/baris) → editable_fields + flag allow_edit_payload
+     *  - callback_on_enter (checkbox) + callback_event_code → callback per-node saat node dimasuki
+     */
+    private function mergeNodeConfig(array $data, ?TblFlowStep $existing): array
+    {
+        $cfg = (is_array($existing?->node_config_json) ? $existing->node_config_json : []);
+
+        // ── editable_fields (textarea selalu terkirim → array_key_exists true) ──
+        if (array_key_exists('editable_fields_raw', $data)) {
+            $paths = collect(preg_split('/\r\n|\r|\n/', (string) ($data['editable_fields_raw'] ?? '')))
+                ->map(fn ($l) => trim($l))->filter()->unique()->values()->all();
+            if (empty($paths)) {
+                unset($cfg['editable_fields']);
+            } else {
+                $cfg['editable_fields'] = $paths;
+            }
+            $data['allow_edit_payload'] = ! empty($paths);
+        }
+        unset($data['editable_fields_raw']);
+
+        // ── callback per-node (checkbox + hidden 0 → selalu terkirim) ──
+        if (array_key_exists('callback_on_enter', $data)) {
+            if (filter_var($data['callback_on_enter'], FILTER_VALIDATE_BOOLEAN)) {
+                $cfg['callback_on_enter'] = true;
+                $ec = trim((string) ($data['callback_event_code'] ?? ''));
+                if ($ec !== '') {
+                    $cfg['callback_event_code'] = $ec;
+                } else {
+                    unset($cfg['callback_event_code']);
+                }
+            } else {
+                unset($cfg['callback_on_enter'], $cfg['callback_event_code']);
+            }
+        }
+        unset($data['callback_on_enter'], $data['callback_event_code']);
+
+        $data['node_config_json'] = $cfg ?: null;
+
+        return $data;
     }
 }

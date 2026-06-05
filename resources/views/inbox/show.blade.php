@@ -219,6 +219,41 @@
                         </div>
                         @endif
 
+                        {{-- 0. Edit Data (hanya field yang di-whitelist untuk node ini) --}}
+                        @if(!empty($editableFields))
+                        <div class="card border-warning mb-3">
+                            <div class="card-header bg-warning bg-opacity-10 small fw-semibold py-2">
+                                <i class="bi bi-pencil-square text-warning"></i> Edit Data (boleh diubah di step ini)
+                            </div>
+                            <div class="card-body">
+                                <div class="row g-3">
+                                    @foreach($editableFields as $ef)
+                                        @php $val = old('edits.'.$ef['path'], $ef['value']); @endphp
+                                        <div class="col-md-6">
+                                            <label class="form-label small fw-semibold mb-1">
+                                                {{ $ef['label'] }}
+                                                <code class="text-muted" style="font-size:.7rem">{{ $ef['path'] }}</code>
+                                            </label>
+                                            @if($ef['type'] === 'textarea')
+                                                <textarea name="edits[{{ $ef['path'] }}]" class="form-control" rows="2">{{ $val }}</textarea>
+                                            @elseif(in_array($ef['type'], ['number','currency']))
+                                                <input type="number" step="any" name="edits[{{ $ef['path'] }}]" class="form-control" value="{{ $val }}">
+                                            @elseif($ef['type'] === 'date')
+                                                <input type="date" name="edits[{{ $ef['path'] }}]" class="form-control" value="{{ $val }}">
+                                            @else
+                                                <input type="text" name="edits[{{ $ef['path'] }}]" class="form-control" value="{{ $val }}">
+                                            @endif
+                                        </div>
+                                    @endforeach
+                                </div>
+                                <small class="text-muted d-block mt-2">
+                                    <i class="bi bi-info-circle"></i>
+                                    Perubahan dicatat di audit & ikut terkirim ke aplikasi asal saat proses selesai.
+                                </small>
+                            </div>
+                        </div>
+                        @endif
+
                         {{-- 1. Keputusan (horizontal) --}}
                         <div class="mb-3">
                             <label class="form-label fw-semibold">Keputusan <span class="text-danger">*</span></label>

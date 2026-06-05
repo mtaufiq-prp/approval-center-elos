@@ -34,6 +34,12 @@ class FlowNodeRequest extends FormRequest
             'reject_behavior'=> ['nullable', 'string', 'max:50'],
             'allow_delegate' => ['sometimes', 'boolean'],
             'allow_edit_payload' => ['sometimes', 'boolean'],
+            // Daftar path field yang boleh diedit approver di node ini (1 path per baris,
+            // gaya form_schema mis. "header.keterangan"). Disimpan ke node_config_json.editable_fields.
+            'editable_fields_raw' => ['nullable', 'string', 'max:4000'],
+            // Per-node callback: kirim callback ke source app saat flow MASUK node ini.
+            'callback_on_enter'   => ['sometimes', 'boolean'],
+            'callback_event_code' => ['nullable', 'string', 'max:80'],
             'sla_hours'      => ['nullable', 'integer', 'min:0'],
             'instruction'    => ['nullable', 'string', 'max:1000'],
             'pos_x'          => ['nullable', 'integer'],

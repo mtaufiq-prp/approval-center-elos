@@ -133,14 +133,17 @@ class InboxController extends Controller
         $contextJson   = $request_model->context_json ?? [];
 
         $inboxCount = TblTask::where('task_status', 'OPEN')
-            ->where(function ($q) { 
+            ->where(function ($q) {
                 $user = auth()->user();
                 $q->where('idtbluser_assigned', $user->idtbluser)
                   ->orWhereHas('candidates', fn($cq) =>
                       $cq->where('idtbluser', $user->idtbluser)->where('is_active', 1));
             })->count();
 
-        return view('inbox.show', compact('task', 'history', 'contextJson', 'inboxCount', 'approvalRoute'));
+        // Field yang boleh diedit approver di node ini (whitelist per-node).
+        $editableFields = $this->editableFieldsFor($task, $request_model);
+
+        return view('inbox.show', compact('task', 'history', 'contextJson', 'inboxCount', 'approvalRoute', 'editableFields'));
     }
 
     /**
@@ -249,10 +252,20 @@ class InboxController extends Controller
         $validated = $request->validate([
             'decision_code' => ['required', 'in:APPROVE,REJECT,RETURN,CANCEL'],
             'decision_note' => ['nullable', 'string', 'max:2000'],
+            // edits = map "path" => "nilai-baru" (key bisa mengandung titik, mis. header.keterangan).
+            // Whitelist & coercion tipe ditangani server di ApproverPayloadEditService.
+            'edits'         => ['nullable', 'array'],
         ]);
+        $edits = $request->input('edits', []);
 
         try {
-            DB::transaction(function () use ($task, $validated) {
+            DB::transaction(function () use ($task, $validated, $edits) {
+                // Terapkan edit field (whitelist per-node) SEBELUM keputusan, dalam transaksi yang
+                // sama → atomik & callback final memuat payload terbaru. Whitelist divalidasi server.
+                if (! empty($edits)) {
+                    app(\App\Services\ApproverPayloadEditService::class)
+                        ->apply($task, $edits, auth()->user());
+                }
                 $this->engine->completeTask(
                     task:         $task,
                     decisionCode: $validated['decision_code'],
@@ -280,6 +293,42 @@ class InboxController extends Controller
     /* ------------------------------------------------------------------ */
     /* Helper                                                               */
     /* ------------------------------------------------------------------ */
+
+    /**
+     * Daftar field yang boleh diedit approver pada node task ini (saat OPEN),
+     * lengkap dengan label & tipe dari form_schema + nilai saat ini.
+     * @return array<int,array{path:string,label:string,type:string,value:mixed}>
+     */
+    private function editableFieldsFor(TblTask $task, TblApprovalRequest $req): array
+    {
+        if ($task->task_status !== 'OPEN') {
+            return [];
+        }
+        $node = $task->flowStep;
+        if (! $node) {
+            return [];
+        }
+        $svc = app(\App\Services\ApproverPayloadEditService::class);
+        if (! $svc->nodeAllowsEdit($node)) {
+            return [];
+        }
+
+        $payload = is_array($req->payload_json) ? $req->payload_json : [];
+        $schema  = optional($req->documentType)->form_schema ?? [];
+        $byField = collect(is_array($schema) ? $schema : [])->keyBy('field');
+
+        $out = [];
+        foreach ($svc->editablePaths($node) as $p) {
+            $fd = $byField->get($p);
+            $out[] = [
+                'path'  => $p,
+                'label' => $fd['label'] ?? $p,
+                'type'  => $fd['type']  ?? 'text',
+                'value' => \App\Services\ApproverPayloadEditService::getValue($payload, $p),
+            ];
+        }
+        return $out;
+    }
 
     /** Auth untuk melihat detail (boleh task OPEN maupun yang sudah selesai). */
     private function authorizeView(TblTask $task): void

@@ -60,6 +60,47 @@
         <textarea name="instruction" class="form-control" rows="2">{{ old('instruction', $item->instruction ?? '') }}</textarea>
     </div>
     <div class="col-md-12">
+        <label class="form-label">Field yang boleh diedit approver (editable_fields)</label>
+        @php
+            $editablePrefill = old('editable_fields_raw',
+                isset($item) && is_array($item->node_config_json ?? null)
+                    ? implode("\n", $item->node_config_json['editable_fields'] ?? [])
+                    : '');
+        @endphp
+        <textarea name="editable_fields_raw" class="form-control font-monospace small" rows="3"
+            placeholder="Satu path per baris (gaya form_schema), mis.:&#10;header.keterangan&#10;header.alamat_kirim">{{ $editablePrefill }}</textarea>
+        <small class="text-muted">
+            Approver di node ini boleh mengubah field tsb saat memproses task (hanya field NON-routing).
+            Kosongkan = approver tidak boleh edit. Path mengikuti konvensi form_schema (mis. <code>header.keterangan</code>).
+        </small>
+    </div>
+    <div class="col-md-12">
+        @php
+            $cbCfg     = isset($item) && is_array($item->node_config_json ?? null) ? $item->node_config_json : [];
+            $cbOn      = (bool) old('callback_on_enter', $cbCfg['callback_on_enter'] ?? false);
+            $cbEvent   = old('callback_event_code', $cbCfg['callback_event_code'] ?? '');
+        @endphp
+        <div class="form-check">
+            {{-- hidden 0 agar uncheck terkirim (default checkbox tidak terkirim) --}}
+            <input type="hidden" name="callback_on_enter" value="0">
+            <input type="checkbox" class="form-check-input" id="cb_on_enter" name="callback_on_enter" value="1" {{ $cbOn ? 'checked' : '' }}>
+            <label class="form-check-label" for="cb_on_enter">
+                Kirim callback ke source app saat flow MASUK node ini
+            </label>
+        </div>
+        <input type="text" name="callback_event_code" class="form-control form-control-sm mt-1"
+               maxlength="80" placeholder="event_code (opsional, default = node_code), mis. STEP_BMH_REACHED"
+               value="{{ $cbEvent }}">
+        <small class="text-muted">
+            Saat flow sampai di node ini, satu callback (event <code>TASK_CREATED</code>) dikirim ke
+            <code>callback_url</code> source app dengan <code>event_code</code>, <code>node_code</code>, status,
+            dan payload. Berguna bila source app harus "melakukan sesuatu" di step ini. Dikirim ulang tiap node dimasuki.
+            <br><span class="text-warning"><i class="bi bi-exclamation-triangle"></i></span>
+            Tidak berlaku di node START/END (state akhir sudah dicakup callback final). Mengaktifkan di banyak node
+            menambah volume callback — sesuaikan kapasitas worker/<code>batch_size</code> pada beban tinggi.
+        </small>
+    </div>
+    <div class="col-md-12">
         <label class="form-label">condition_json (filter node — Tahap 5: dipakai validator struktural saja)</label>
         <textarea name="condition_json_raw" class="form-control font-monospace small" rows="4"
             placeholder='null (kosong = always) atau {"op":"=","field":"status","value":"ACTIVE"}'

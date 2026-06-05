@@ -136,6 +136,11 @@ callback (≤1000/menit) terkuras + StartProcessJob tertangani.
 - **Idempotent** pengiriman (`ShouldBeUnique`), backoff `next_retry_at`, gagal permanen → `DEAD`.
 - **Status terpisah** dari approval: `request_status=APPROVED` tetap final walau `callback status=PENDING/FAILED/DEAD`.
 - **SSRF allowlist** (#C1): hanya CIDR terdaftar; loopback & metadata selalu diblok.
+- **Callback per-node (opsional)**: node dapat dikonfigurasi `node_config_json.callback_on_enter` untuk mengirim
+  callback `TASK_CREATED` saat flow MASUK node (event dibedakan via `event_code`). START/END dikecualikan.
+  **Catatan skala**: tiap node ber-callback yang dimasuki = 1 baris outbox tambahan; mengaktifkan di banyak node
+  melipatgandakan volume callback (≈ jumlah node ber-callback × req/menit) → naikkan `APPROVAL_CALLBACK_BATCH_SIZE`
+  & jumlah `queue:work` worker sesuai beban. Re-entry (RETURN/loop) mengirim ulang (dibatasi loop-guard MAX_HOPS).
 
 ---
 

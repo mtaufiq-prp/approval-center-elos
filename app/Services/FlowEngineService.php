@@ -436,11 +436,66 @@ class FlowEngineService
             }
             $request->save();
 
+            // Per-node callback "step reached" (bila node dikonfigurasi). Setelah status sync
+            // agar payload akurat. Dikirim tiap node dimasuki (re-entry/RETURN → kirim lagi).
+            $this->maybeEnqueueNodeCallback($node, $request);
+
             $this->createApprovalTask($node, $instance, $request);
             return;
         }
 
+        // Node non-APPROVAL: callback "step reached" juga didukung (mis. node SYSTEM/NOTIFICATION
+        // di mana source app harus melakukan sesuatu di step itu).
+        $this->maybeEnqueueNodeCallback($node, $request);
+
         $this->traverseFromNode($node, $instance, $request, $token, $actionCode);
+    }
+
+    /**
+     * Kirim callback "step reached" ke source app saat flow MASUK node yang dikonfigurasi
+     * (node_config_json.callback_on_enter). Keputusan desain:
+     *  - pemicu: saat node dimasuki (mencakup semua tipe node)
+     *  - tujuan: callback_url source app (event dibedakan via event_code)
+     *  - re-entry: dikirim ulang tiap masuk; body memuat reached_at untuk dedup di source app
+     * Defensif: kegagalan enqueue TIDAK menggagalkan traversal (sifatnya informational).
+     */
+    private function maybeEnqueueNodeCallback(TblFlowStep $node, TblApprovalRequest $request): void
+    {
+        $cfg = $node->node_config_json ?? [];
+        if (empty($cfg['callback_on_enter']) || empty($request->callback_url)) {
+            return;
+        }
+        // START/END tidak memicu node-callback: START tidak pernah masuk enterNode, dan state
+        // akhir di END sudah dicakup callback FINAL (completeProcess). Cegah callback ganda di END.
+        if ($node->isStart() || $node->isEnd()) {
+            return;
+        }
+
+        // Transactional outbox: JANGAN ditelan try/catch — konsisten dengan callback final.
+        // Bila insert gagal, transaksi submit/keputusan ikut rollback (fail-safe), bukan
+        // kehilangan callback secara diam-diam.
+        $eventCode = $cfg['callback_event_code'] ?? $node->node_code;
+        TblCallbackOutbox::create([
+            'idtblapproval_request' => $request->idtblapproval_request,
+            'idtblsource_app'       => $request->idtblsource_app,
+            'event_type'            => 'TASK_CREATED', // ENUM-valid; penanda event per-step (lihat event_code)
+            'target_url'            => $request->callback_url,
+            'payload_json'          => [
+                'event_type'          => 'TASK_CREATED',
+                'event_code'          => $eventCode,
+                'node_code'           => $node->node_code,
+                'step_name'           => $node->step_name,
+                'approval_request_id' => $request->idtblapproval_request,
+                'source_request_id'   => $request->source_request_id,
+                'source_request_no'   => $request->source_request_no,
+                'request_status'      => $request->request_status,
+                'reached_at'          => now()->toIso8601String(),
+                'payload'             => $request->payload_json,
+            ],
+            'status'        => TblCallbackOutbox::STATUS_PENDING,
+            'retry_count'   => 0,
+            'next_retry_at' => now(),
+        ]);
     }
 
     private function executeDecisionNode(
@@ -744,6 +799,9 @@ class FlowEngineService
                 'source_request_no'   => $request->source_request_no,
                 'request_status'      => $request->request_status,
                 'decided_at'          => now()->toIso8601String(),
+                // Sertakan payload final (memuat hasil edit approver) agar source app
+                // bisa sinkron data yang diubah saat approval (keputusan desain #edit).
+                'payload'             => $request->payload_json,
             ],
             'status'      => TblCallbackOutbox::STATUS_PENDING,
             'retry_count' => 0,
