@@ -35,6 +35,12 @@ return [
         //   HMAC_SHA256( timestamp + "\n" + raw_request_body , decrypted_secret )
         // Konstanta separator agar konsisten antar aplikasi.
         'signature_separator' => "\n",
+
+        // Rate limit per API client (bukan per IP) untuk endpoint /api/v1/*.
+        // Default tinggi agar target 1000 req/menit (~16.7/s) tidak ter-throttle
+        // (review #3 — throttle:60,1 per-IP membuat target mustahil). Limiter
+        // 'api_client' didefinisikan di AppServiceProvider, keyed by idtblapi_client.
+        'rate_limit_per_minute' => (int) env('APPROVAL_API_RATE_LIMIT', 2000),
     ],
 
     /*
@@ -48,7 +54,30 @@ return [
         'max_retry'              => (int) env('APPROVAL_CALLBACK_MAX_RETRY', 10),
         'http_timeout_seconds'   => (int) env('APPROVAL_CALLBACK_HTTP_TIMEOUT', 15),
         'backoff_cap_minutes'    => (int) env('APPROVAL_CALLBACK_BACKOFF_CAP_MINUTES', 1440),
-        'batch_size'             => (int) env('APPROVAL_CALLBACK_BATCH_SIZE', 50),
+        // #6/#9/#10: jumlah baris outbox yang di-dispatch per tick scheduler.
+        // Pada 1000 req/menit, ~1000 callback/menit diproduksi; batch 50 (lama)
+        // membuat backlog tumbuh ~950/menit dan tidak pernah terkuras. Default
+        // dinaikkan ke 1000 dan worker queue diparalelkan (lihat DEPLOYMENT_GUIDE).
+        'batch_size'             => (int) env('APPROVAL_CALLBACK_BATCH_SIZE', 1000),
+
+        /*
+        | SSRF allowlist (review #8/#109/#11).
+        |
+        | Sistem ini INTERNAL-only: aplikasi sumber (SFA/PR/BSKB) hidup di jaringan
+        | privat (10.x). Guard lama menolak SEMUA rentang privat → seluruh callback
+        | internal ditandai DEAD dan hub-and-spoke putus. Kita ganti dengan ALLOWLIST:
+        | resolved IP target HARUS masuk salah satu CIDR ini. Loopback & metadata/
+        | link-local (169.254.0.0/16) SELALU diblokir, bahkan jika di dalam allowlist.
+        |
+        | Default = rentang privat RFC1918 (deployment internal). Set
+        | APPROVAL_CALLBACK_ALLOWED_CIDRS untuk membatasi lebih ketat (mis. hanya
+        | subnet server aplikasi). String kosong = izinkan semua host non-loopback/
+        | non-metadata (TIDAK disarankan; hanya untuk dev).
+        */
+        'allowed_cidrs' => array_values(array_filter(array_map('trim', explode(',', (string) env(
+            'APPROVAL_CALLBACK_ALLOWED_CIDRS',
+            '10.0.0.0/8,172.16.0.0/12,192.168.0.0/16'
+        ))))),
 
         // Status yang menghasilkan event callback ke aplikasi asal
         'event_types' => [
@@ -60,6 +89,34 @@ return [
             // TASK_CREATED dipakai opsional, default OFF
             'TASK_CREATED' => false,
         ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Async Start (skalabilitas 1000 req/menit — review #12)
+    |--------------------------------------------------------------------------
+    | Bila TRUE, endpoint submit hanya menyimpan request (transaksional, ringan)
+    | lalu meng-enqueue StartProcessJob untuk menjalankan engine (enrichment sudah
+    | dilakukan sinkron untuk routing). Memindahkan traversal engine + resolusi
+    | assignee + pembuatan task keluar dari request HTTP → latency p95 turun & lebih
+    | tahan beban. Response mengembalikan status SUBMITTED; source app polling status.
+    |
+    | Default FALSE (kompatibel: engine jalan sinkron, response langsung IN_PROGRESS
+    | dengan task siap). Aktifkan di produksi beban tinggi + jalankan queue worker.
+    */
+    'async_start' => (bool) env('APPROVAL_ASYNC_START', false),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Enrichment (PayloadEnrichmentService)
+    |--------------------------------------------------------------------------
+    | Lookup data master (db_master.ms_product_group cross-DB & branch→approver map)
+    | dijalankan tiap submit. Data ini jarang berubah → cache pendek mengurangi beban
+    | query (terutama cross-DB) pada 1000 req/menit. 0 = nonaktifkan cache.
+    | Trade-off: perubahan mapping approver baru berlaku setelah TTL kedaluwarsa.
+    */
+    'enrichment' => [
+        'cache_ttl_seconds' => (int) env('APPROVAL_ENRICHMENT_CACHE_TTL', 300),
     ],
 
     /*

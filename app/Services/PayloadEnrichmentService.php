@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -170,28 +171,43 @@ class PayloadEnrichmentService
      */
     private function lookupBranchApprovers(string $branchId): array
     {
-        try {
-            $rows = DB::connection('mysql') // connection approval_center
-                ->table('tblapprover_branch_map')
-                ->where('idtblbranch', $branchId)
-                ->where('is_active', 1)
-                ->get(['bmh_user_ref', 'rrm_user_ref']);
+        return $this->remember("enrich:branch:{$branchId}", function () use ($branchId) {
+            try {
+                $rows = DB::connection('mysql') // connection approval_center
+                    ->table('tblapprover_branch_map')
+                    ->where('idtblbranch', $branchId)
+                    ->where('is_active', 1)
+                    ->get(['bmh_user_ref', 'rrm_user_ref']);
 
-            if ($rows->isEmpty()) return [[], null];
+                if ($rows->isEmpty()) return [[], null];
 
-            $bmhRefs = $rows->pluck('bmh_user_ref')
-                ->filter()->unique()->values()->toArray();
+                $bmhRefs = $rows->pluck('bmh_user_ref')
+                    ->filter()->unique()->values()->toArray();
 
-            // RRM: ambil dari baris pertama yang ada RRM-nya
-            $rrmRef = $rows->firstWhere('rrm_user_ref', '!=' , null)?->rrm_user_ref
-                ?? $rows->first()?->rrm_user_ref;
+                // RRM: ambil dari baris pertama yang ada RRM-nya
+                $rrmRef = $rows->firstWhere('rrm_user_ref', '!=', null)?->rrm_user_ref
+                    ?? $rows->first()?->rrm_user_ref;
 
-            return [$bmhRefs, $rrmRef ?: null];
+                return [$bmhRefs, $rrmRef ?: null];
 
-        } catch (\Throwable $e) {
-            Log::warning("lookupBranchApprovers({$branchId}): {$e->getMessage()}");
-            return [[], null];
+            } catch (\Throwable $e) {
+                Log::warning("lookupBranchApprovers({$branchId}): {$e->getMessage()}");
+                return [[], null];
+            }
+        });
+    }
+
+    /**
+     * Cache pendek untuk lookup data master enrichment (#perf). TTL dari config;
+     * 0 = nonaktif. Mengurangi query berulang (terutama cross-DB) pada beban tinggi.
+     */
+    private function remember(string $key, \Closure $resolver): array
+    {
+        $ttl = (int) config('approval_center.enrichment.cache_ttl_seconds', 300);
+        if ($ttl <= 0) {
+            return $resolver();
         }
+        return Cache::remember($key, $ttl, $resolver);
     }
 
     /**
@@ -202,30 +218,31 @@ class PayloadEnrichmentService
      */
     private function lookupProductManagerByPh(string $ph4): array
     {
-        try {
-            // Query ke database db_master — pastikan ada connection 'master' di config/database.php
-            // atau gunakan DB::select dengan full database prefix
-            $row = DB::select(
-                "SELECT produk_manager, pd_manager
-                 FROM db_master.ms_product_group
-                 WHERE ph4 = ?
-                 LIMIT 1",
-                [$ph4]
-            );
+        // Cross-DB ke db_master per submit → cache pendek (#perf).
+        return $this->remember("enrich:pmm_pd:{$ph4}", function () use ($ph4) {
+            try {
+                $row = DB::select(
+                    "SELECT produk_manager, pd_manager
+                     FROM db_master.ms_product_group
+                     WHERE ph4 = ?
+                     LIMIT 1",
+                    [$ph4]
+                );
 
-            if (empty($row)) return [null, null];
+                if (empty($row)) return [null, null];
 
-            $pmm = $row[0]->produk_manager ?? null;
-            $pd  = $row[0]->pd_manager     ?? null;
+                $pmm = $row[0]->produk_manager ?? null;
+                $pd  = $row[0]->pd_manager     ?? null;
 
-            return [
-                ($pmm && $pmm !== '0') ? (string) $pmm : null,
-                ($pd  && $pd  !== '0') ? (string) $pd  : null,
-            ];
+                return [
+                    ($pmm && $pmm !== '0') ? (string) $pmm : null,
+                    ($pd  && $pd  !== '0') ? (string) $pd  : null,
+                ];
 
-        } catch (\Throwable $e) {
-            Log::warning("lookupProductManagerByPh({$ph4}): {$e->getMessage()}");
-            return [null, null];
-        }
+            } catch (\Throwable $e) {
+                Log::warning("lookupProductManagerByPh({$ph4}): {$e->getMessage()}");
+                return [null, null];
+            }
+        });
     }
 }

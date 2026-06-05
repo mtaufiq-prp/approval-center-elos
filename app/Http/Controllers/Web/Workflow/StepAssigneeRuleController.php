@@ -105,7 +105,9 @@ class StepAssigneeRuleController extends Controller
         }
     }
 
-    private function isLocked(TblFlowVersion $v): bool  { return $v->isActive() && $v->isInUse(); }
+    // #16: lock otoritatif (ACTIVE OR in-use OR instance RUNNING) — cegah edit assignee
+    // rule pada version INACTIVE yang masih punya instance berjalan.
+    private function isLocked(TblFlowVersion $v): bool  { return $v->isLocked(); }
     private function abortIfLocked(TblFlowVersion $v): void
     {
         if ($this->isLocked($v)) abort(403, 'Version ini sudah dipakai. Buat Clone.');

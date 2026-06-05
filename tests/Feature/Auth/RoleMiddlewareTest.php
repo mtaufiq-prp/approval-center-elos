@@ -7,11 +7,27 @@ use App\Models\TblUser;
 use App\Models\TblUserRole;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Route;
 use Tests\TestCase;
 
 class RoleMiddlewareTest extends TestCase
 {
     use DatabaseTransactions;
+
+    /**
+     * Daftarkan route demo HANYA untuk test (tidak diekspos di produksi).
+     * Memakai middleware nyata 'role' agar autorisasi benar-benar teruji.
+     */
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        Route::middleware(['web', 'auth', 'role:ADMIN_APPROVAL'])
+            ->get('/admin-only-demo', fn () => response('ok'));
+
+        Route::middleware(['web', 'auth', 'role:APPROVER,ADMIN_APPROVAL'])
+            ->get('/approver-only-demo', fn () => response('ok'));
+    }
 
     private function makeUserWithRole(string $userRef, ?string $roleCode = null): TblUser
     {

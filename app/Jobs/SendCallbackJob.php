@@ -67,15 +67,19 @@ class SendCallbackJob implements ShouldQueue, ShouldBeUnique
             $secret    = config('app.callback_hmac_secret') ?: config('app.key');
             $signature = hash_hmac('sha256', $timestamp . "\n" . $nonce . "\n" . $bodyJson, $secret);
 
-            $response = Http::timeout(15)
+            // #M1: kirim BYTE-IDENTIK dengan yang ditandatangani. Sebelumnya body
+            // di-encode ulang oleh Http::post($array) tanpa JSON_UNESCAPED_UNICODE,
+            // sehingga byte berbeda dari $bodyJson → HMAC penerima tidak cocok untuk
+            // payload non-ASCII. withBody() mengirim string yang persis ditandatangani.
+            $response = Http::timeout((int) config('approval_center.callback.http_timeout_seconds', 15))
                 ->withHeaders([
-                    'Content-Type'     => 'application/json',
                     'X-Source'         => 'ApprovalCenter',
                     'X-Callback-Ts'    => $timestamp,
                     'X-Callback-Nonce' => $nonce,
                     'X-Callback-Sig'   => $signature,
                 ])
-                ->post($cb->target_url, $cb->payload_json ?? []);
+                ->withBody($bodyJson, 'application/json')
+                ->post($cb->target_url);
 
             if ($response->successful()) {
                 $cb->status             = TblCallbackOutbox::STATUS_SENT;
@@ -131,26 +135,67 @@ class SendCallbackJob implements ShouldQueue, ShouldBeUnique
     }
 
     /**
-     * Kembalikan alasan blokir bila host target tidak aman (loopback/privat/link-local/
-     * metadata), atau null bila aman.
+     * Kembalikan alasan blokir bila host target tidak aman, atau null bila aman.
+     *
+     * MODEL ALLOWLIST (review #8/#109/#11): sistem ini internal-only — aplikasi
+     * sumber hidup di jaringan privat (10.x). Guard lama (denylist rentang privat)
+     * memblokir SEMUA callback sah → hub-and-spoke putus. Sekarang:
+     *   - loopback & metadata/link-local SELALU diblokir (tak pernah target sah),
+     *   - bila allowlist CIDR dikonfigurasi, resolved IP HARUS masuk salah satunya,
+     *   - host yang tak bisa di-resolve dibiarkan (HTTP akan gagal & retry; tak ada
+     *     SSRF karena tak mencapai apa pun) — hindari DEAD karena DNS blip.
      */
     private function blockedReason(?string $url): ?string
     {
         $host = strtolower((string) parse_url((string) $url, PHP_URL_HOST));
         if ($host === '') return 'invalid host';
         if (in_array($host, ['localhost', '0.0.0.0', '::1'], true)) return 'loopback';
-        if (str_ends_with($host, '.local') || str_ends_with($host, '.internal')) return 'internal TLD';
 
-        // Resolve ke IP (IPv4) lalu cek rentang privat/link-local/loopback.
+        // Resolve hostname → IPv4 (gethostbyname mengembalikan input bila gagal).
         $ip = filter_var($host, FILTER_VALIDATE_IP) ? $host : gethostbyname($host);
-        if (filter_var($ip, FILTER_VALIDATE_IP)) {
-            if (! filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
-                return "private/reserved IP ({$ip})";
-            }
-            if (str_starts_with($ip, '169.254.') || $ip === '169.254.169.254') {
-                return 'link-local/metadata IP';
-            }
+        if (! filter_var($ip, FILTER_VALIDATE_IP)) {
+            // Tak ter-resolve → tak bisa mencapai target apa pun; biarkan HTTP gagal & retry.
+            return null;
         }
+
+        // IPv6 belum didukung deployment internal (IPv4-only). Tolak demi keamanan.
+        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
+            return "IPv6 target tidak didukung ({$ip})";
+        }
+
+        // SELALU blokir loopback & metadata/link-local, walau ada di allowlist.
+        if (str_starts_with($ip, '127.'))     return 'loopback IP';
+        if (str_starts_with($ip, '169.254.')) return 'link-local/metadata IP';
+
+        // Allowlist: bila dikonfigurasi, IP target HARUS masuk salah satu CIDR.
+        $allowed = (array) config('approval_center.callback.allowed_cidrs', []);
+        if (! empty($allowed)) {
+            foreach ($allowed as $cidr) {
+                if (self::ipInCidr($ip, (string) $cidr)) {
+                    return null; // diizinkan
+                }
+            }
+            return "IP {$ip} di luar allowlist callback (set APPROVAL_CALLBACK_ALLOWED_CIDRS)";
+        }
+
+        // Allowlist kosong (dev): izinkan semua kecuali loopback/metadata (sudah diblokir).
         return null;
+    }
+
+    /** Cek apakah IPv4 berada dalam CIDR (atau cocok persis bila tanpa /bits). */
+    public static function ipInCidr(string $ip, string $cidr): bool
+    {
+        if (! str_contains($cidr, '/')) {
+            return $ip === $cidr;
+        }
+        [$subnet, $bits] = explode('/', $cidr, 2);
+        $bits = (int) $bits;
+        $ipLong     = ip2long($ip);
+        $subnetLong = ip2long($subnet);
+        if ($ipLong === false || $subnetLong === false) return false;
+        if ($bits <= 0)  return true;
+        if ($bits > 32)  $bits = 32;
+        $mask = -1 << (32 - $bits);
+        return ($ipLong & $mask) === ($subnetLong & $mask);
     }
 }

@@ -129,9 +129,11 @@ class LoginTest extends TestCase
             'is_active' => 1,
         ]);
 
+        // Password salah yang LOLOS validasi min:6 agar menguji jalur kredensial
+        // (bukan jalur validasi panjang). Sebelumnya 'salah' (5 char) → error 'password'.
         $this->post('/login', [
             'login'    => 'TEST003',
-            'password' => 'salah',
+            'password' => 'salahsekali',
         ])->assertSessionHasErrors('login');
 
         $this->assertGuest();

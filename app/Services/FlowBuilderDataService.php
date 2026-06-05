@@ -155,16 +155,9 @@ class FlowBuilderDataService
 
     public function isLocked(TblFlowVersion $version): bool
     {
-        // #94: cegah config drift untuk instance berjalan. Lock bila:
-        //  - ACTIVE (bisa menerima request kapan saja), ATAU
-        //  - sudah pernah dipakai request apa pun, ATAU
-        //  - punya process instance yang masih RUNNING.
-        if ($version->isActive() || $version->isInUse()) {
-            return true;
-        }
-        return \App\Models\TblProcessInstance::where('idtblflow_version', $version->idtblflow_version)
-            ->where('instance_status', 'RUNNING')
-            ->exists();
+        // #94/#16: delegasi ke sumber kebenaran tunggal di model agar semua jalur
+        // (builder, controller legacy node/edge/assignee) memakai aturan lock identik.
+        return $version->isLocked();
     }
 
     /** Posisi X default berdasarkan step_order jika pos_x belum diset */

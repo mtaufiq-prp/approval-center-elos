@@ -92,6 +92,31 @@ class TblFlowVersion extends Model
         return $this->approvalRequestsUsingThisVersion()->exists();
     }
 
+    /**
+     * Apakah konfigurasi version ini TERKUNCI dari editing?
+     *
+     * Sumber kebenaran tunggal untuk semua jalur (builder, controller legacy
+     * node/edge/assignee, FlowBuilderDataService). Version terkunci bila:
+     *  - ACTIVE (bisa menerima request kapan saja), ATAU
+     *  - sudah pernah dipakai approval request manapun, ATAU
+     *  - punya process instance yang masih RUNNING (in-flight).
+     *
+     * Mencegah config drift pada instance berjalan (review #16/#94): engine
+     * membaca konfigurasi LIVE tiap traversal, sehingga edit/hapus node/edge/
+     * assignee pada version yang masih dipakai dapat merusak/mengubah jalur
+     * approval request yang sedang berjalan.
+     */
+    public function isLocked(): bool
+    {
+        if ($this->isActive() || $this->isInUse()) {
+            return true;
+        }
+
+        return \App\Models\TblProcessInstance::where('idtblflow_version', $this->idtblflow_version)
+            ->where('instance_status', 'RUNNING')
+            ->exists();
+    }
+
     // ---------------------------------------------------------------------
     // RELATIONSHIPS
     // ---------------------------------------------------------------------

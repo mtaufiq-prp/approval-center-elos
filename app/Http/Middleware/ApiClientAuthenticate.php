@@ -58,12 +58,14 @@ class ApiClientAuthenticate
             return $this->deny('TIMESTAMP_EXPIRED', 'Timestamp kadaluarsa (toleransi ±300s).', $request);
         }
 
-        // Nonce replay check — simpan nonce di cache selama 2× TOLERANCE
+        // Nonce replay check — reservasi ATOMIC (#4). Cache::add() = insert-if-absent
+        // dalam satu operasi; mengembalikan false bila key sudah ada. Sebelumnya
+        // has()+put() terpisah (TOCTOU): dua request dengan nonce sama yang tiba
+        // bersamaan bisa lolos keduanya pada driver database. Disimpan 2× TOLERANCE.
         $nonceCacheKey = 'hmac_nonce:' . $clientKey . ':' . $nonce;
-        if (Cache::has($nonceCacheKey)) {
+        if (! Cache::add($nonceCacheKey, 1, self::TOLERANCE * 2)) {
             return $this->deny('REPLAY_DETECTED', 'Nonce sudah digunakan (replay attack terdeteksi).', $request);
         }
-        Cache::put($nonceCacheKey, 1, self::TOLERANCE * 2);
 
         // HMAC verify — sertakan nonce dalam signed string
         try {
@@ -77,7 +79,13 @@ class ApiClientAuthenticate
             return $this->deny('INVALID_SIGNATURE', 'Signature tidak valid.', $request);
         }
 
-        $client->last_used_at = now(); $client->saveQuietly();
+        // Debounce penulisan last_used_at (review #L2): pada 1000 req/menit, meng-UPDATE
+        // baris tblapi_client yang sama tiap request menciptakan write hot-spot/lock churn.
+        // Cukup update bila sudah > 60 detik sejak terakhir.
+        if (! $client->last_used_at || $client->last_used_at->lt(now()->subSeconds(60))) {
+            $client->last_used_at = now();
+            $client->saveQuietly();
+        }
         $request->attributes->set('api_client', $client);
 
         return $next($request);

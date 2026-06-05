@@ -99,6 +99,63 @@ class FlowEngineService
     }
 
     /**
+     * Jalankan ULANG proses untuk request yang sebelumnya RETURNED (dikembalikan
+     * ke pemohon) lalu di-submit ulang oleh source app dengan data perbaikan (#H2).
+     *
+     * Tanpa fix ini, RETURN bersifat dead-end permanen: request tertutup RETURNED,
+     * tidak ada task, dan resubmit (doc_ref sama) ditelan oleh dedup → macet selamanya.
+     *
+     * Karena uq_tbl_instance_request membatasi 1 instance per request, kita REUSE
+     * instance tunggal yang ada: reset ke RUNNING, buka token baru, telusuri dari START.
+     */
+    public function restartProcess(TblApprovalRequest $request, TblFlowVersion $version): TblProcessInstance
+    {
+        return DB::transaction(function () use ($request, $version) {
+            $instance = TblProcessInstance::where('idtblapproval_request', $request->idtblapproval_request)
+                ->lockForUpdate()->first();
+
+            // Anomali: tidak ada instance → start normal.
+            if (! $instance) {
+                return $this->startProcess($request, $version);
+            }
+
+            $instance->idtblflow_version      = $version->idtblflow_version;
+            $instance->instance_status        = 'RUNNING';
+            $instance->idtblflow_step_current = null;
+            $instance->ended_at               = null;
+            $instance->save();
+
+            // Tutup token lama yang masih ACTIVE, buka token baru (tak ada unique token_key).
+            TblProcessToken::where('idtblprocess_instance', $instance->idtblprocess_instance)
+                ->where('token_status', TblProcessToken::STATUS_ACTIVE)
+                ->update(['token_status' => TblProcessToken::STATUS_COMPLETED, 'completed_at' => now()]);
+
+            $token = TblProcessToken::create([
+                'idtblprocess_instance' => $instance->idtblprocess_instance,
+                'idtblapproval_request' => $request->idtblapproval_request,
+                'token_status'          => TblProcessToken::STATUS_ACTIVE,
+                'token_key'             => 'restart-' . $instance->idtblprocess_instance . '-'
+                                            . substr(str_replace('.', '', (string) microtime(true)), -8),
+            ]);
+
+            $startNode = $this->findStartStep($version);
+            if (! $startNode) {
+                throw new RuntimeException("Flow version #{$version->idtblflow_version} tidak punya START node.");
+            }
+
+            $this->logRoute($request->idtblapproval_request, $instance->idtblprocess_instance,
+                $startNode->idtblflow_step, null,
+                TblProcessRouteLog::EV_ENTER_NODE, 'START', 'RESUBMIT', null,
+                'Proses dijalankan ulang setelah RETURNED (resubmit).');
+
+            $this->hopCount = 0;
+            $this->traverseFromNode($startNode, $instance, $request, $token, null);
+
+            return $instance->fresh();
+        });
+    }
+
+    /**
      * Selesaikan task saat ini (approve/reject/return/etc).
      * Dipanggil TaskService setelah approver submit action.
      *
@@ -128,22 +185,26 @@ class FlowEngineService
     public function completeCurrentTask(TblTask $task, string $actionCode, ?string $comment, int $actorId): void
     {
         DB::transaction(function () use ($task, $actionCode, $comment, $actorId) {
-            // Re-fetch dengan row lock agar concurrent request tidak double-advance
+            // #iter3: LOCK ORDER instance → task. WAJIB sama dengan jalur cancel/reopen yang
+            // mengunci instance dulu lalu mem-UPDATE (mengunci) baris task. Bila approve mengunci
+            // task dulu lalu instance, sementara cancel mengunci instance dulu lalu task → ABBA
+            // deadlock (InnoDB 1213). Dengan instance dikunci lebih dulu di SEMUA jalur, instance
+            // menjadi titik serialisasi tunggal.
+            $instance = TblProcessInstance::where('idtblprocess_instance', $task->idtblprocess_instance)
+                            ->lockForUpdate()->firstOrFail();
+            // Pastikan instance masih RUNNING (#84): cegah task OPEN basi menghidupkan instance final.
+            if ($instance->instance_status !== 'RUNNING') {
+                throw new \RuntimeException(
+                    "Instance #{$instance->idtblprocess_instance} sudah {$instance->instance_status}; task #{$task->idtbltask} tidak bisa diproses."
+                );
+            }
+
+            // Re-fetch task dengan row lock agar concurrent request tidak double-advance.
             $task = TblTask::where('idtbltask', $task->idtbltask)->lockForUpdate()->firstOrFail();
 
             // Task yang bisa diproses: OPEN atau CLAIMED
             if (! in_array($task->task_status, ['OPEN', 'CLAIMED'])) {
                 throw new \RuntimeException("Task #{$task->idtbltask} sudah dalam status {$task->task_status}.");
-            }
-
-            // Lock instance & pastikan masih RUNNING sebelum memutasi apa pun.
-            // Cegah task OPEN basi menghidupkan kembali instance yang sudah final (#84).
-            $instance = TblProcessInstance::where('idtblprocess_instance', $task->idtblprocess_instance)
-                            ->lockForUpdate()->firstOrFail();
-            if ($instance->instance_status !== 'RUNNING') {
-                throw new \RuntimeException(
-                    "Instance #{$instance->idtblprocess_instance} sudah {$instance->instance_status}; task #{$task->idtbltask} tidak bisa diproses."
-                );
             }
 
             // #72 Defense-in-depth: task harus berada di node aktif instance saat ini.
@@ -176,6 +237,11 @@ class FlowEngineService
                 default                   => throw new \RuntimeException("Action code tidak dikenal: {$actionCode}"),
             };
 
+            // #M2: tangkap status SEBELUM mutasi/save. getOriginal('task_status') setelah
+            // save() sudah ter-sync ke nilai baru → before_status menjadi sama dengan
+            // after_status (trail transisi rusak). Tangkap di sini saat masih OPEN/CLAIMED.
+            $beforeStatus = $task->task_status;
+
             $task->task_status            = $taskStatus;
             $task->decision_code          = strtoupper($actionCode);
             $task->decision_note          = $comment;
@@ -201,7 +267,7 @@ class FlowEngineService
                 'actor_ref'              => $actor?->user_ref,
                 'action_code'            => strtoupper($actionCode),
                 'action_note'            => $comment,
-                'before_status'          => $task->getOriginal('task_status') ?? $task->task_status,
+                'before_status'          => $beforeStatus,
                 'after_status'           => $taskStatus,
                 'idtblflow_step_before'  => $currentNode->idtblflow_step,
                 'client_ip'              => request()?->ip(),

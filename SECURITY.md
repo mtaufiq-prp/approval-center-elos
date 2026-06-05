@@ -42,8 +42,44 @@ Ref: review issue #106.
 
 - Pola transactional outbox (`tblcallback_outbox`) diproduksi saat proses final (review #81).
 - Setiap callback ditandatangani HMAC (`X-Callback-Sig` + `X-Callback-Nonce` + `X-Callback-Ts`).
-- SSRF guard menolak loopback + rentang privat/link-local/metadata (review #8, #109).
+  Body dikirim **byte-identik** dengan yang ditandatangani (`withBody`) agar penerima dapat
+  memverifikasi HMAC untuk payload non-ASCII (review iterasi lanjutan #M1).
+- **SSRF allowlist** (review iterasi lanjutan #C1): sistem internal-only, callback sah menuju IP
+  privat (10.x). Guard memakai **allowlist CIDR** (`APPROVAL_CALLBACK_ALLOWED_CIDRS`, default RFC1918):
+  resolved IP target HARUS masuk allowlist. Loopback & metadata/link-local (`169.254.0.0/16`)
+  **selalu** diblokir walau di dalam allowlist. (Guard denylist lama memblokir SEMUA IP privat →
+  seluruh callback internal DEAD; itu diperbaiki.)
 - Pengiriman idempoten (`ShouldBeUnique`) + backoff via `next_retry_at`; gagal permanen → `DEAD` (review #86, #98).
+- Retry manual admin (`AuditController::retryCallback`) kini dicatat di `tblaudit_event`
+  (`CALLBACK_RETRY`) sebelum reset & re-dispatch (review iterasi lanjutan #H8).
+
+## Throttling & Idempotency API
+
+- Rate limit `/api/v1/*` di-key **per API client** (`throttle:api_client`, default 2000/menit via
+  `APPROVAL_API_RATE_LIMIT`), bukan per-IP. Throttle 60/IP lama membuat target 1000 req/menit
+  mustahil & memungkinkan satu IP proxy memblok seluruh sistem (review iterasi lanjutan #C3).
+- Nonce anti-replay memakai reservasi **atomic** `Cache::add` (bukan `has()+put()` yang TOCTOU)
+  (review iterasi lanjutan #H3).
+- Submit duplikat konkuren (race) yang menabrak unique `(source_app, doc_type, doc_ref)` /
+  `(source_app, idempotency_key)` di-tangkap (errno 1062) → balasan **idempotent 200**, bukan 500
+  (review iterasi lanjutan #H4).
+
+## Cancel & State Machine
+
+- `ApprovalCancelController` mengunci instance lalu request (`lockForUpdate`, urutan sama dengan
+  jalur approve) & re-cek status di bawah lock → tidak ada race yang menimpa status final
+  APPROVED/REJECTED dengan CANCELLED; request final → `409 NOT_CANCELLABLE`. Pembatalan dicatat
+  di `tblaction_log` beserta alasan (review iterasi lanjutan #H1/#H7).
+- RETURN (dikembalikan ke pemohon) tidak lagi dead-end: resubmit `doc_ref` yang sama men-*re-drive*
+  request via `FlowEngineService::restartProcess` (reuse instance tunggal) (review iterasi lanjutan #H2).
+
+## Config Flow vs Instance Berjalan
+
+- Lock editing version memakai sumber tunggal `TblFlowVersion::isLocked()` (ACTIVE **atau** pernah
+  dipakai **atau** ada instance RUNNING) di semua jalur: builder, `builder-validate`, dan controller
+  legacy node/edge/assignee. Sebelumnya controller legacy memakai `isActive() && isInUse()` yang lebih
+  longgar → version INACTIVE dengan instance RUNNING bisa diedit & merusak jalur in-flight
+  (review iterasi lanjutan #C4/#H9).
 
 ## Audit Trail
 

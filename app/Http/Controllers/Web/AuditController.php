@@ -153,6 +153,21 @@ class AuditController extends Controller
             return back()->with('error', 'Hanya callback FAILED atau DEAD yang bisa di-retry.');
         }
 
+        // #H8: catat override manual admin SEBELUM reset (sebelumnya tidak ada jejak
+        // bahwa admin me-reset & menembak ulang callback — termasuk yang DEAD/SSRF-blocked).
+        app(\App\Services\AuditTrailService::class)->recordEvent(
+            entityType: 'tblcallback_outbox',
+            entityId:   $outbox->idtblcallback_outbox,
+            eventCode:  'CALLBACK_RETRY',
+            message:    "Manual retry oleh admin untuk callback #{$outbox->idtblcallback_outbox} ke {$outbox->target_url}",
+            newValues:  [
+                'prev_status'      => $outbox->status,
+                'prev_retry_count' => $outbox->retry_count,
+                'event_type'       => $outbox->event_type,
+                'idtblapproval_request' => $outbox->idtblapproval_request,
+            ],
+        );
+
         // Reset agar bisa diproses ulang (termasuk retry_count, agar tak langsung skip)
         $outbox->status        = 'PENDING';
         $outbox->retry_count   = 0;

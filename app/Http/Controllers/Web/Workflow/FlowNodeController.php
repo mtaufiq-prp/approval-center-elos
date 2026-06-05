@@ -131,7 +131,11 @@ class FlowNodeController extends Controller
 
     private function isLocked(TblFlowVersion $v): bool
     {
-        return $v->isActive() && $v->isInUse();
+        // #16: lock otoritatif (ACTIVE OR in-use OR ada instance RUNNING). Sebelumnya
+        // `isActive() && isInUse()` → version yang sudah di-INACTIVE-kan oleh deploy
+        // versi baru lolos lock padahal instance lama masih RUNNING → edit/hapus node
+        // merusak jalur approval in-flight.
+        return $v->isLocked();
     }
 
     private function abortIfLocked(TblFlowVersion $v): void

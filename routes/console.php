@@ -37,3 +37,17 @@ Schedule::job(new SlaEscalationJob, 'default')
     ->everyThirtyMinutes()
     ->name('sla-escalation')
     ->withoutOverlapping(10);
+
+// Jaring pengaman async-start: re-drive request SUBMITTED yang menggantung tanpa
+// instance (mis. job hilang / dispatch gagal). Idempoten & murah. (#H5)
+Schedule::command('approval:reconcile-stuck')
+    ->everyFiveMinutes()
+    ->name('reconcile-stuck-requests')
+    ->withoutOverlapping(5);
+
+// Retensi log operasional bervolume tinggi agar tabel tidak tumbuh tak terbatas
+// pada 1000 req/menit. Audit (tblaudit_event/tblaction_log) TIDAK di-prune. (#perf)
+Schedule::command('approval:prune-logs --days=' . (int) env('APPROVAL_LOG_RETENTION_DAYS', 30))
+    ->dailyAt('02:30')
+    ->name('prune-operational-logs')
+    ->withoutOverlapping(30);
