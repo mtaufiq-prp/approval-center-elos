@@ -201,7 +201,10 @@ class FlowBuilderSaveService
                         'idtblflow_version'    => $version->idtblflow_version,
                         'idtblflow_step_from'  => $sourceDbId,
                         'idtblflow_step_to'    => $targetDbId,
-                        'transition_code'      => $data['transition_code'] ?: $autoCode,
+                        // Abaikan transition_code dari frontend: builder mengirim placeholder
+                        // 'FROM_TO_TO' untuk SEMUA edge → bentrok di uq_(version,code). Selalu
+                        // pakai autoCode unik berbasis id from→to (transition_code internal saja).
+                        'transition_code'      => $autoCode,
                         'transition_name'      => $data['transition_name']  ?: null,
                         'transition_type'      => $data['transition_type']  ?? 'NORMAL',
                         'action_code'          => $data['action_code']      ?? 'APPROVE',
