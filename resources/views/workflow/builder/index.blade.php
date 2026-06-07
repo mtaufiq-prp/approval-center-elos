@@ -95,7 +95,15 @@
         #rf{width:100%;height:100%}
         .react-flow{background:var(--bg)}
         .react-flow__edge-path{stroke:var(--fg4);stroke-width:2}
-        .react-flow__edge.selected .react-flow__edge-path{stroke:var(--accent);stroke-width:2.5}
+        /* Edge terpilih: !important agar mengalahkan inline strokeWidth dari styleOneEdge.
+           Pertahankan warna aksi, pertegas dengan tebal + glow + label menonjol. */
+        .react-flow__edge.selected .react-flow__edge-path,
+        .react-flow__edge:focus .react-flow__edge-path{
+            stroke-width:4 !important;
+            filter:drop-shadow(0 0 4px var(--accent));
+        }
+        .react-flow__edge.selected .react-flow__edge-textbg{ stroke-width:3 !important; }
+        .react-flow__edge.selected .react-flow__edge-text{ font-weight:800 }
         .react-flow__arrowhead polygon{fill:var(--fg4)}
         .react-flow__controls{background:var(--surface);border:1px solid var(--border);border-radius:6px}
         .react-flow__controls-button{background:var(--surface);border-bottom:1px solid var(--border);color:var(--fg2);fill:var(--fg2)}
