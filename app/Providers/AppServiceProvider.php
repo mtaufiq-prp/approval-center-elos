@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
+use Illuminate\Pagination\Paginator;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 
@@ -19,6 +20,11 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        // App pakai Bootstrap 5 (CDN). Default paginator Laravel = Tailwind →
+        // panah SVG (w-5 h-5) tampil raksasa tanpa CSS Tailwind. Pakai view
+        // pagination Bootstrap 5 agar ->links() di semua halaman benar.
+        Paginator::useBootstrapFive();
+
         $this->configureRateLimiters();
     }
 
