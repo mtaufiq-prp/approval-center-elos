@@ -42,19 +42,23 @@ return Application::configure(basePath: dirname(__DIR__))
         });
 
         // Graceful 419: CSRF token mismatch / sesi kedaluwarsa pada request web.
-        // Daripada halaman "Page Expired" yang membingungkan, kembalikan user ke
-        // halaman sebelumnya (atau login) dengan pesan jelas + token segar.
-        $exceptions->render(function (\Illuminate\Session\TokenMismatchException $e, $request) {
+        // CATATAN: Handler::render() memanggil prepareException() yang mengubah
+        // TokenMismatchException → HttpException(419) SEBELUM renderViaCallbacks,
+        // jadi callback harus menangkap HttpException berstatus 419 (bukan
+        // TokenMismatchException langsung). Lihat Foundation/Exceptions/Handler.
+        $exceptions->render(function (\Symfony\Component\HttpKernel\Exception\HttpException $e, $request) {
+            if ($e->getStatusCode() !== 419) {
+                return null; // bukan sesi kedaluwarsa → biarkan handler default
+            }
             if ($request->is('api/*') || $request->expectsJson()) {
                 return response()->json([
-                    'success' => false,
+                    'success'    => false,
                     'error_code' => 'PAGE_EXPIRED',
-                    'message' => 'Sesi kedaluwarsa. Muat ulang lalu coba lagi.',
+                    'message'    => 'Sesi kedaluwarsa. Muat ulang lalu coba lagi.',
                 ], 419);
             }
             return redirect()
                 ->guest(route('login'))
-                ->withInput($request->except(['password', 'password_confirmation', '_token']))
                 ->with('error', 'Sesi Anda telah kedaluwarsa. Silakan login kembali.');
         });
     })
