@@ -36,7 +36,10 @@ class ApprovalSubmitController extends Controller
         $data = $request->validate([
             'doc_ref'             => ['required', 'string', 'max:100'],
             'doc_no'              => ['nullable', 'string', 'max:100'],
-            'idtbldocument_type'  => ['required', 'integer'],
+            // Document type boleh disebut via doc_code (DISARANKAN, stabil & terlihat di UI)
+            // ATAU idtbldocument_type (legacy/internal). Wajib salah satu.
+            'idtbldocument_type'  => ['required_without:doc_code', 'nullable', 'integer'],
+            'doc_code'            => ['required_without:idtbldocument_type', 'nullable', 'string', 'max:50'],
             'callback_url'        => ['nullable', 'url', 'max:255'],
             'context_json'        => ['required', 'array', 'min:1'],
             'context_json.*'      => ['nullable'],
@@ -54,15 +57,15 @@ class ApprovalSubmitController extends Controller
             'priority'            => ['nullable', 'string', 'max:20'],
         ]);
 
-        // #104: pastikan document type milik source_app klien terautentikasi
-        $docTypeOwned = \App\Models\TblDocumentType::where('idtbldocument_type', (int) $data['idtbldocument_type'])
-            ->where('idtblsource_app', $client->idtblsource_app)
-            ->exists();
-        if (! $docTypeOwned) {
+        // Resolve document type → id kanonik. Terima doc_code (disarankan) ATAU
+        // idtbldocument_type (legacy). SELALU di-scope ke source_app klien (sekaligus
+        // cek ownership #104). doc_code unik per source_app (uq_tbl_doc_type) → tak ambigu.
+        $docTypeId = $this->resolveDocTypeId($data, $client);
+        if (! $docTypeId) {
             return response()->json([
                 'success' => false,
                 'error'   => 'INVALID_DOCUMENT_TYPE',
-                'message' => 'Document type tidak dikenal untuk source app ini.',
+                'message' => 'Document type tidak dikenal untuk source app ini (cek doc_code / idtbldocument_type).',
             ], 422);
         }
 
@@ -85,7 +88,7 @@ class ApprovalSubmitController extends Controller
         // #H2: KECUALI bila request sebelumnya RETURNED (dikembalikan untuk perbaikan) →
         // re-drive dengan data baru, bukan ditelan dedup (yang membuatnya macet permanen).
         $dup = TblApprovalRequest::where('idtblsource_app', $client->idtblsource_app)
-            ->where('idtbldocument_type', (int) $data['idtbldocument_type'])
+            ->where('idtbldocument_type', $docTypeId)
             ->where('source_request_id', $data['doc_ref'])
             ->first();
         if ($dup) {
@@ -109,7 +112,7 @@ class ApprovalSubmitController extends Controller
         $asyncStart = (bool) config('approval_center.async_start', false);
 
         try {
-            $result = DB::transaction(function () use ($data, $client, $idempKey, $asyncStart) {
+            $result = DB::transaction(function () use ($data, $client, $idempKey, $asyncStart, $docTypeId) {
 
                 // ── Payload enrichment ──────────────────────────────────
                 // Inject _computed fields ke context_json tanpa mengubah source app
@@ -123,7 +126,7 @@ class ApprovalSubmitController extends Controller
                 // ── Resolve flow version via routing rule ───────────────
                 $version = $this->routingRuleService->determineFlowVersion(
                     $client->idtblsource_app,
-                    (int) $data['idtbldocument_type'],
+                    $docTypeId,
                     $contextJson
                 );
 
@@ -134,7 +137,7 @@ class ApprovalSubmitController extends Controller
 
                 $req = TblApprovalRequest::create([
                     'idtblsource_app'           => $client->idtblsource_app,
-                    'idtbldocument_type'         => $data['idtbldocument_type'],
+                    'idtbldocument_type'         => $docTypeId,
                     'source_request_id'          => $data['doc_ref'],
                     'source_request_no'          => $data['doc_no'] ?? $data['doc_ref'],
                     'idtblflow_version_selected' => $version->idtblflow_version,
@@ -206,9 +209,9 @@ class ApprovalSubmitController extends Controller
             if ($e instanceof \Illuminate\Database\QueryException
                 && (int) ($e->errorInfo[1] ?? 0) === 1062) {
                 $existing = TblApprovalRequest::where('idtblsource_app', $client->idtblsource_app)
-                    ->where(function ($q) use ($data, $idempKey) {
-                        $q->where(function ($q2) use ($data) {
-                            $q2->where('idtbldocument_type', (int) $data['idtbldocument_type'])
+                    ->where(function ($q) use ($data, $idempKey, $docTypeId) {
+                        $q->where(function ($q2) use ($data, $docTypeId) {
+                            $q2->where('idtbldocument_type', $docTypeId)
                                ->where('source_request_id', $data['doc_ref']);
                         });
                         if ($idempKey) {
@@ -263,6 +266,27 @@ class ApprovalSubmitController extends Controller
     }
 
     /**
+     * Resolve document type → idtbldocument_type, SELALU di-scope ke source_app klien
+     * terautentikasi. Prioritas: `doc_code` (disarankan, stabil & terlihat di UI) lalu
+     * `idtbldocument_type` (legacy). doc_code unik per source_app (uq_tbl_doc_type) → tak
+     * ambigu. Mengembalikan null bila tak ditemukan (= bukan milik source app ini).
+     */
+    private function resolveDocTypeId(array $data, $client): ?int
+    {
+        $base = fn () => \App\Models\TblDocumentType::where('idtblsource_app', $client->idtblsource_app);
+
+        if (! empty($data['doc_code'])) {
+            $row = $base()->where('doc_code', $data['doc_code'])->first();
+        } elseif (! empty($data['idtbldocument_type'])) {
+            $row = $base()->where('idtbldocument_type', (int) $data['idtbldocument_type'])->first();
+        } else {
+            return null;
+        }
+
+        return $row ? (int) $row->idtbldocument_type : null;
+    }
+
+    /**
      * Re-drive request yang sebelumnya RETURNED dengan data perbaikan (#H2).
      *
      * Reuse baris request (uq_tbl_request_source_doc melarang baris baru dengan
@@ -311,7 +335,7 @@ class ApprovalSubmitController extends Controller
 
                 $version = $this->routingRuleService->determineFlowVersion(
                     $client->idtblsource_app,
-                    (int) $data['idtbldocument_type'],
+                    (int) $dup->idtbldocument_type,
                     $contextJson
                 );
 

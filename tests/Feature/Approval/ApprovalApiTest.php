@@ -78,6 +78,50 @@ class ApprovalApiTest extends TestCase
             ->assertStatus(401);
     }
 
+    public function test_submit_with_doc_code_instead_of_id(): void
+    {
+        $fx = $this->buildMinimalFlow();
+        $client = $this->makeApiClient($fx['app'], 'CK1', $this->secret);
+
+        // Pakai doc_code (stabil), TANPA idtbldocument_type internal.
+        $payload = [
+            'doc_ref'      => 'DOC-DC1',
+            'doc_code'     => 'TST_DOC',
+            'context_json' => ['amount' => 100],
+        ];
+        $this->signed('POST', '/api/v1/approval/submit', $payload, $client)
+            ->assertStatus(201)->assertJson(['success' => true]);
+
+        $this->assertDatabaseHas('tblapproval_request', [
+            'source_request_id'  => 'DOC-DC1',
+            'idtbldocument_type' => $fx['docType']->idtbldocument_type, // ter-resolve dari doc_code
+        ]);
+    }
+
+    public function test_submit_with_unknown_doc_code_rejected(): void
+    {
+        $fx = $this->buildMinimalFlow();
+        $client = $this->makeApiClient($fx['app'], 'CK1', $this->secret);
+
+        $this->signed('POST', '/api/v1/approval/submit', [
+            'doc_ref'      => 'DOC-DC2',
+            'doc_code'     => 'NOPE',
+            'context_json' => ['amount' => 100],
+        ], $client)->assertStatus(422)->assertJson(['error' => 'INVALID_DOCUMENT_TYPE']);
+    }
+
+    public function test_submit_without_doc_identifier_rejected(): void
+    {
+        $fx = $this->buildMinimalFlow();
+        $client = $this->makeApiClient($fx['app'], 'CK1', $this->secret);
+
+        // Tanpa doc_code maupun idtbldocument_type → validasi gagal (422).
+        $this->signed('POST', '/api/v1/approval/submit', [
+            'doc_ref'      => 'DOC-DC3',
+            'context_json' => ['amount' => 100],
+        ], $client)->assertStatus(422);
+    }
+
     public function test_replay_nonce_rejected(): void
     {
         $fx = $this->buildMinimalFlow();

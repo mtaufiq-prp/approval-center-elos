@@ -25,8 +25,13 @@ class ApprovalStatusController extends Controller
             $q->where('idtblapproval_request', (int) $id);
         } elseif ($docRef = $request->query('doc_ref')) {
             $q->where('source_request_id', $docRef);
-            if ($dtId = $request->query('idtbldocument_type')) {
-                $q->where('idtbldocument_type', $dtId);
+            // Filter doc type opsional: doc_code (disarankan) ATAU idtbldocument_type (legacy),
+            // di-scope ke source_app klien — konsisten dengan endpoint submit.
+            if ($docCode = $request->query('doc_code')) {
+                $q->whereIn('idtbldocument_type', \App\Models\TblDocumentType::where('idtblsource_app', $client->idtblsource_app)
+                    ->where('doc_code', $docCode)->pluck('idtbldocument_type'));
+            } elseif ($dtId = $request->query('idtbldocument_type')) {
+                $q->where('idtbldocument_type', (int) $dtId);
             }
         } else {
             return response()->json(['success' => false, 'message' => 'Sertakan approval_request_id atau doc_ref.'], 400);
