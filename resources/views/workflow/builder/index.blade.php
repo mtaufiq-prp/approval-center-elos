@@ -184,6 +184,26 @@
         .mbox p{margin:0 0 14px;font-size:12px;color:var(--fg2)}
         .mbtns{display:flex;gap:8px;justify-content:flex-end}
 
+        /* Label edge (SUBMIT/APPROVE/REJECT) — bg ikut tema (fill var() resolve di CSS) */
+        .react-flow__edge-textbg{fill:var(--surface)}
+        .react-flow__edge-text{font-weight:600}
+
+        /* Tombol Panduan — pakai palet START agar ikut tema */
+        .bhelp{background:var(--n-start-bg);color:var(--n-start-tx);border:1px solid var(--n-start-bd)}
+
+        /* ===== Light overrides untuk chip ber-aksen-gelap ===== */
+        html[data-theme="light"] .bv{background:#ddf4ff;color:#0969da;border-color:#54aeff}
+        html[data-theme="light"] .bACTIVE{background:#dafbe1;color:#1a7f37;border-color:#2da44e}
+        html[data-theme="light"] .bINACTIVE{background:#fff8c5;color:#9a6700;border-color:#d4a72c}
+        html[data-theme="light"] .tok{background:#dafbe1;border-color:#2da44e;color:#1a7f37}
+        html[data-theme="light"] .ter{background:#ffebe9;border-color:#cf222e;color:#cf222e}
+        html[data-theme="light"] .tin{background:#f3e8ff;border-color:#8250df;color:#6639ba}
+        html[data-theme="light"] .bde{background:#ffebe9;color:#cf222e}
+        html[data-theme="light"] #lkbanner{background:#ffebe9;border-color:#cf222e;color:#cf222e}
+        html[data-theme="light"] .ve{color:#cf222e}
+        html[data-theme="light"] .vw{color:#9a6700}
+        html[data-theme="light"] .vok{color:#1a7f37}
+
         ::-webkit-scrollbar{width:4px}
         ::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
     </style>
@@ -234,7 +254,7 @@
         <button class="btn bcln" onclick="doClone()">
             <i class="bi bi-copy"></i> Clone
         </button>
-        <button class="btn" style="background:#0d4429;color:#3fb950;border:1px solid #238636" onclick="showHelp()">
+        <button class="btn bhelp" onclick="showHelp()">
             <i class="bi bi-question-circle"></i> Panduan
         </button>
         <div class="spc"></div>
@@ -909,7 +929,10 @@ function styleEdges(rfEdges) {
         if (ac === 'REJECT') e.style.strokeDasharray = '6 4';
         e.markerEnd = { type: MarkerType.ArrowClosed, color:c };
         e.labelStyle = { fontSize: 11, fontWeight: 600, fill: c };
-        e.labelBgStyle = { fill: '#0d1117', fillOpacity: 0.85 };
+        // Tanpa fill inline → bg di-handle CSS .react-flow__edge-textbg (ikut tema)
+        e.labelBgStyle = { fillOpacity: 0.95 };
+        e.labelBgPadding = [6, 3];
+        e.labelBgBorderRadius = 4;
     });
 
     var groups = {};
