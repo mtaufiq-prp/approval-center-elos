@@ -929,10 +929,11 @@ function styleEdges(rfEdges) {
         if (ac === 'REJECT') e.style.strokeDasharray = '6 4';
         e.markerEnd = { type: MarkerType.ArrowClosed, color:c };
         e.labelStyle = { fontSize: 11, fontWeight: 600, fill: c };
-        // Tanpa fill inline → bg di-handle CSS .react-flow__edge-textbg (ikut tema)
-        e.labelBgStyle = { fillOpacity: 0.95 };
+        // Tanpa fill inline → bg di-handle CSS .react-flow__edge-textbg (ikut tema).
+        // Border berwarna sesuai aksi agar label terlihat jelas di kanvas terang.
+        e.labelBgStyle = { fillOpacity: 0.95, stroke: c, strokeWidth: 1.5 };
         e.labelBgPadding = [6, 3];
-        e.labelBgBorderRadius = 4;
+        e.labelBgBorderRadius = 5;
     });
 
     var groups = {};
