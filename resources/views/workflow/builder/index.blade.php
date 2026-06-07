@@ -22,6 +22,12 @@
             --fg:#e6edf3; --fg2:#8b949e; --fg3:#6e7681; --fg4:#484f58;
             --accent:#58a6ff; --rf-dots:#21262d; --rf-mask:rgba(13,17,23,.7);
             --overlay:rgba(13,17,23,.92);
+            /* warna chip node (dark) */
+            --n-start-bg:#0d4429; --n-start-bd:#238636; --n-start-tx:#3fb950;
+            --n-appr-bg:#1c1c3a;  --n-appr-bd:#6e40c9;  --n-appr-tx:#a371f7;
+            --n-dec-bg:#2d1d00;   --n-dec-bd:#9e6a03;   --n-dec-tx:#d29922;
+            --n-end-bg:#161b22;   --n-end-bd:#30363d;   --n-end-tx:#6e7681;
+            --n-title:#e6edf3;    --n-sub:#6e7681;
         }
         html[data-theme="light"]{
             --bg:#f6f8fa; --surface:#ffffff; --raised:#eaeef2;
@@ -29,6 +35,12 @@
             --fg:#1f2328; --fg2:#57606a; --fg3:#6e7781; --fg4:#8c959f;
             --accent:#0969da; --rf-dots:#d0d7de; --rf-mask:rgba(255,255,255,.6);
             --overlay:rgba(246,248,250,.92);
+            /* warna chip node (light) */
+            --n-start-bg:#dafbe1; --n-start-bd:#2da44e; --n-start-tx:#1a7f37;
+            --n-appr-bg:#f3e8ff;  --n-appr-bd:#8250df;  --n-appr-tx:#6639ba;
+            --n-dec-bg:#fff8c5;   --n-dec-bd:#bf8700;   --n-dec-tx:#9a6700;
+            --n-end-bg:#eaeef2;   --n-end-bd:#afb8c1;   --n-end-tx:#57606a;
+            --n-title:#1f2328;    --n-sub:#57606a;
         }
 
         *{box-sizing:border-box}
@@ -71,10 +83,10 @@
             cursor:grab;font-size:12px;font-weight:600;user-select:none;margin-bottom:6px;
             border:1px solid transparent;transition:transform .1s}
         .pnode:hover{transform:translateX(3px)}
-        .pnS{background:#0d4429;border-color:#238636;color:#3fb950}
-        .pnA{background:#1c1c3a;border-color:#6e40c9;color:#a371f7}
-        .pnD{background:#2d1d00;border-color:#9e6a03;color:#d29922}
-        .pnE{background:var(--raised);border-color:var(--border2);color:var(--fg3)}
+        .pnS{background:var(--n-start-bg);border-color:var(--n-start-bd);color:var(--n-start-tx)}
+        .pnA{background:var(--n-appr-bg);border-color:var(--n-appr-bd);color:var(--n-appr-tx)}
+        .pnD{background:var(--n-dec-bg);border-color:var(--n-dec-bd);color:var(--n-dec-tx)}
+        .pnE{background:var(--n-end-bg);border-color:var(--n-end-bd);color:var(--n-end-tx)}
         .psep{height:1px;background:var(--border);margin:8px 0}
         .phint{font-size:10px;color:var(--fg4);line-height:1.5}
 
@@ -684,10 +696,10 @@ const { createRoot } = ReactDOM;
 // CONSTANTS
 // ============================================================
 const NC = {
-    START:    { bg:'#0d4429', bd:'#238636', tx:'#3fb950', ic:'▶' },
-    APPROVAL: { bg:'#1c1c3a', bd:'#6e40c9', tx:'#a371f7', ic:'✓' },
-    DECISION: { bg:'#2d1d00', bd:'#9e6a03', tx:'#d29922', ic:'◆' },
-    END:      { bg:'#161b22', bd:'#30363d', tx:'#6e7681', ic:'■' },
+    START:    { bg:'var(--n-start-bg)', bd:'var(--n-start-bd)', tx:'var(--n-start-tx)', ic:'▶' },
+    APPROVAL: { bg:'var(--n-appr-bg)',  bd:'var(--n-appr-bd)',  tx:'var(--n-appr-tx)',  ic:'✓' },
+    DECISION: { bg:'var(--n-dec-bg)',   bd:'var(--n-dec-bd)',   tx:'var(--n-dec-tx)',   ic:'◆' },
+    END:      { bg:'var(--n-end-bg)',   bd:'var(--n-end-bd)',   tx:'var(--n-end-tx)',   ic:'■' },
 };
 const ASSIGNEE_TYPES = ['USER','ROLE','GROUP','POSITION','SUPERIOR','FIELD_USER','FIELD_POSITION','JOBTITLE','API_RESOLVER'];
 
@@ -721,11 +733,11 @@ function FlowNode({ id, data, selected }) {
     return h('div', {
         style:{
             background: c.bg,
-            border: `2px solid ${hasErr?'#da3633':selected?'#58a6ff':c.bd}`,
+            border: `2px solid ${hasErr?'#da3633':selected?'var(--accent)':c.bd}`,
             borderRadius: isD ? '2px' : '8px',
             transform: isD ? 'rotate(45deg)' : 'none',
             minWidth: '120px', cursor:'pointer',
-            boxShadow: selected ? `0 0 0 2px ${c.bd}55` : 'none',
+            boxShadow: selected ? `0 0 0 3px var(--accent)` : 'none',
         }
     },
         h(Handle, { type:'target', position: Position.Left,
@@ -735,8 +747,8 @@ function FlowNode({ id, data, selected }) {
                 h('span', { style:{ fontSize:15 } }, c.ic),
                 h('div', {},
                     h('div', { style:{ fontSize:9, color:c.tx, fontWeight:700, textTransform:'uppercase', letterSpacing:'.04em' } }, data.step_type),
-                    h('div', { style:{ fontSize:12, color:'#e6edf3', fontWeight:600, maxWidth:100, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' } }, data.node_code||id),
-                    h('div', { style:{ fontSize:10, color:'#6e7681', maxWidth:100, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' } }, data.step_name),
+                    h('div', { style:{ fontSize:12, color:'var(--n-title)', fontWeight:600, maxWidth:100, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' } }, data.node_code||id),
+                    h('div', { style:{ fontSize:10, color:'var(--n-sub)', maxWidth:100, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' } }, data.step_name),
                 ),
             ),
             data.step_type==='APPROVAL' && h('div', { style:{ fontSize:10, color:c.tx, marginTop:2 } },
@@ -856,7 +868,17 @@ function App() {
             h(Controls, {}),
             h(MiniMap, {
                 style:{ background:'var(--bg)', border:'1px solid var(--border)' },
-                nodeColor: function(n){ return (NC[n.type]||NC.APPROVAL).bd; },
+                nodeColor: function(n){
+                    // SVG minimap tak bisa resolve var() → pakai hex konkret per tema
+                    var light = document.documentElement.getAttribute('data-theme') === 'light';
+                    var m = {
+                        START:    light ? '#2da44e' : '#238636',
+                        APPROVAL: light ? '#8250df' : '#6e40c9',
+                        DECISION: light ? '#bf8700' : '#9e6a03',
+                        END:      light ? '#afb8c1' : '#30363d',
+                    };
+                    return m[n.type] || m.APPROVAL;
+                },
                 maskColor: 'var(--rf-mask)',
             }),
         )
