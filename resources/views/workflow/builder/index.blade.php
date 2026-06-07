@@ -228,6 +228,9 @@
             document.documentElement.setAttribute('data-theme', next);
             try { localStorage.setItem('builder_theme', next); } catch(e){}
             applyThemeIcon();
+            // Paksa re-render ReactFlow agar MiniMap nodeColor (dihitung di JS,
+            // bukan var CSS) ikut tema baru. CSS-var elemen lain sudah live.
+            try { if (window.G && G.setNodes) G.setNodes(function(ns){ return ns.slice(); }); } catch(e){}
         }
         document.addEventListener('DOMContentLoaded', applyThemeIcon);
     </script>
@@ -293,7 +296,7 @@
 
             <div id="loading">
                 <div class="spin"></div>
-                <span style="color:#6e7681;font-size:12px">Memuat canvas...</span>
+                <span style="color:var(--fg3);font-size:12px">Memuat canvas...</span>
             </div>
 
             <div id="cctrls">
@@ -316,7 +319,7 @@
         <div id="bh" onclick="togBot()">
             <i class="bi bi-terminal"></i> Validation
             <span class="spc"></span>
-            <span id="vsum" style="color:#6e7681">—</span>
+            <span id="vsum" style="color:var(--fg3)">—</span>
             <span id="bico" style="margin-left:6px">▼</span>
         </div>
         <div id="vo" style="display:none"><div class="vmt">Belum dijalankan. Klik Validate.</div></div>
@@ -344,29 +347,29 @@
     display:none;align-items:flex-start;justify-content:center;
     z-index:10000;padding:20px;overflow-y:auto">
     <div style="
-        background:#161b22;border:1px solid #21262d;border-radius:12px;
+        background:var(--surface);border:1px solid var(--border);border-radius:12px;
         width:100%;max-width:780px;margin:auto;padding:28px 32px;
         position:relative">
 
         <!-- Header -->
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;border-bottom:1px solid #21262d;padding-bottom:16px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;border-bottom:1px solid var(--border);padding-bottom:16px">
             <div>
-                <div style="font-size:18px;font-weight:700;color:#e6edf3">
+                <div style="font-size:18px;font-weight:700;color:var(--fg)">
                     <i class="bi bi-diagram-3" style="color:#3fb950"></i>
                     Panduan Membuat Workflow Approval
                 </div>
-                <div style="font-size:12px;color:#6e7681;margin-top:4px">
+                <div style="font-size:12px;color:var(--fg3);margin-top:4px">
                     Ikuti langkah-langkah berikut untuk membuat alur persetujuan dokumen
                 </div>
             </div>
             <button onclick="hideHelp()" style="
-                background:none;border:none;color:#6e7681;cursor:pointer;
+                background:none;border:none;color:var(--fg3);cursor:pointer;
                 font-size:22px;line-height:1;padding:4px 8px">×</button>
         </div>
 
         <!-- Intro -->
-        <div style="background:#0d1117;border-radius:8px;padding:14px 16px;margin-bottom:24px;border-left:3px solid #388bfd">
-            <div style="font-size:12px;color:#8b949e;line-height:1.7">
+        <div style="background:var(--bg);border-radius:8px;padding:14px 16px;margin-bottom:24px;border-left:3px solid #388bfd">
+            <div style="font-size:12px;color:var(--fg2);line-height:1.7">
                 <strong style="color:#58a6ff">Apa itu Workflow Approval?</strong><br>
                 Workflow adalah <em>alur perjalanan dokumen</em> mulai dari dikirim, melewati satu atau beberapa orang
                 yang harus menyetujui, sampai akhirnya selesai (disetujui atau ditolak).<br><br>
@@ -377,221 +380,221 @@
 
         <!-- KONSEP DASAR -->
         <div style="margin-bottom:24px">
-            <div style="font-size:13px;font-weight:700;color:#e6edf3;margin-bottom:12px;display:flex;align-items:center;gap:8px">
+            <div style="font-size:13px;font-weight:700;color:var(--fg);margin-bottom:12px;display:flex;align-items:center;gap:8px">
                 <span style="background:#1f6feb;color:#fff;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0">1</span>
                 Pahami 4 Jenis Node (Kotak di Canvas)
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-                <div style="background:#0d4429;border:1px solid #238636;border-radius:8px;padding:12px">
-                    <div style="font-size:13px;font-weight:700;color:#3fb950;margin-bottom:6px">▶ START</div>
-                    <div style="font-size:11px;color:#8b949e;line-height:1.6">
-                        <strong style="color:#e6edf3">Titik awal workflow.</strong><br>
+                <div style="background:var(--n-start-bg);border:1px solid var(--n-start-bd);border-radius:8px;padding:12px">
+                    <div style="font-size:13px;font-weight:700;color:var(--n-start-tx);margin-bottom:6px">▶ START</div>
+                    <div style="font-size:11px;color:var(--fg2);line-height:1.6">
+                        <strong style="color:var(--fg)">Titik awal workflow.</strong><br>
                         Setiap flow <em>wajib</em> punya tepat <strong>1 node START</strong>.
                         Dari sinilah dokumen masuk ke sistem saat pertama kali diajukan.<br>
                         <span style="color:#3fb950">→ Tidak perlu diisi apapun, cukup ada.</span>
                     </div>
                 </div>
-                <div style="background:#1c1c3a;border:1px solid #6e40c9;border-radius:8px;padding:12px">
-                    <div style="font-size:13px;font-weight:700;color:#a371f7;margin-bottom:6px">✓ APPROVAL</div>
-                    <div style="font-size:11px;color:#8b949e;line-height:1.6">
-                        <strong style="color:#e6edf3">Langkah persetujuan.</strong><br>
+                <div style="background:var(--n-appr-bg);border:1px solid var(--n-appr-bd);border-radius:8px;padding:12px">
+                    <div style="font-size:13px;font-weight:700;color:var(--n-appr-tx);margin-bottom:6px">✓ APPROVAL</div>
+                    <div style="font-size:11px;color:var(--fg2);line-height:1.6">
+                        <strong style="color:var(--fg)">Langkah persetujuan.</strong><br>
                         Dokumen akan berhenti di sini menunggu seseorang untuk menyetujui atau menolak.
                         Anda tentukan <em>siapa</em> yang harus approve via <strong>Assignee Rule</strong>.<br>
                         <span style="color:#a371f7">→ Bisa dibuat banyak sesuai jumlah level persetujuan.</span>
                     </div>
                 </div>
-                <div style="background:#2d1d00;border:1px solid #9e6a03;border-radius:8px;padding:12px">
-                    <div style="font-size:13px;font-weight:700;color:#d29922;margin-bottom:6px">◆ DECISION</div>
-                    <div style="font-size:11px;color:#8b949e;line-height:1.6">
-                        <strong style="color:#e6edf3">Persimpangan otomatis.</strong><br>
+                <div style="background:var(--n-dec-bg);border:1px solid var(--n-dec-bd);border-radius:8px;padding:12px">
+                    <div style="font-size:13px;font-weight:700;color:var(--n-dec-tx);margin-bottom:6px">◆ DECISION</div>
+                    <div style="font-size:11px;color:var(--fg2);line-height:1.6">
+                        <strong style="color:var(--fg)">Persimpangan otomatis.</strong><br>
                         Sistem akan memilih jalur secara otomatis berdasarkan data dokumen.
                         Contoh: kalau nilai &gt; 10 juta → ke Direktur, kalau tidak → langsung selesai.<br>
                         <span style="color:#d29922">→ Gunakan ini untuk percabangan berdasarkan kondisi.</span>
                     </div>
                 </div>
-                <div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:12px">
-                    <div style="font-size:13px;font-weight:700;color:#6e7681;margin-bottom:6px">■ END</div>
-                    <div style="font-size:11px;color:#8b949e;line-height:1.6">
-                        <strong style="color:#e6edf3">Titik akhir workflow.</strong><br>
+                <div style="background:var(--surface);border:1px solid var(--border2);border-radius:8px;padding:12px">
+                    <div style="font-size:13px;font-weight:700;color:var(--fg3);margin-bottom:6px">■ END</div>
+                    <div style="font-size:11px;color:var(--fg2);line-height:1.6">
+                        <strong style="color:var(--fg)">Titik akhir workflow.</strong><br>
                         Dokumen selesai diproses (disetujui, ditolak, atau dibatalkan).
                         Flow <em>wajib</em> punya minimal <strong>1 node END</strong>.<br>
-                        <span style="color:#6e7681">→ Tidak perlu diisi apapun, cukup ada.</span>
+                        <span style="color:var(--fg3)">→ Tidak perlu diisi apapun, cukup ada.</span>
                     </div>
                 </div>
             </div>
         </div>
 
         <!-- LANGKAH 1: TAMBAH NODE -->
-        <div style="margin-bottom:24px;background:#0d1117;border-radius:8px;padding:16px">
-            <div style="font-size:13px;font-weight:700;color:#e6edf3;margin-bottom:10px;display:flex;align-items:center;gap:8px">
+        <div style="margin-bottom:24px;background:var(--bg);border-radius:8px;padding:16px">
+            <div style="font-size:13px;font-weight:700;color:var(--fg);margin-bottom:10px;display:flex;align-items:center;gap:8px">
                 <span style="background:#1f6feb;color:#fff;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0">2</span>
                 Tambahkan Node ke Canvas
             </div>
-            <div style="font-size:12px;color:#8b949e;line-height:1.8;margin-bottom:10px">
-                Di sebelah kiri ada <strong style="color:#e6edf3">Node Palette</strong> — berisi 4 jenis node.
+            <div style="font-size:12px;color:var(--fg2);line-height:1.8;margin-bottom:10px">
+                Di sebelah kiri ada <strong style="color:var(--fg)">Node Palette</strong> — berisi 4 jenis node.
                 Cara menambahkan node ke canvas:
             </div>
             <div style="display:flex;flex-direction:column;gap:8px">
-                <div style="display:flex;align-items:flex-start;gap:10px;padding:8px 12px;background:#161b22;border-radius:6px">
+                <div style="display:flex;align-items:flex-start;gap:10px;padding:8px 12px;background:var(--surface);border-radius:6px">
                     <span style="font-size:16px;flex-shrink:0">🖱️</span>
-                    <div style="font-size:11px;color:#8b949e;line-height:1.6">
-                        <strong style="color:#e6edf3">Drag & Drop</strong> — klik node di palette kiri, tahan, lalu lepas di area canvas (area gelap tengah).
+                    <div style="font-size:11px;color:var(--fg2);line-height:1.6">
+                        <strong style="color:var(--fg)">Drag & Drop</strong> — klik node di palette kiri, tahan, lalu lepas di area canvas (area gelap tengah).
                         Node akan muncul di lokasi Anda melepasnya.
                     </div>
                 </div>
-                <div style="display:flex;align-items:flex-start;gap:10px;padding:8px 12px;background:#161b22;border-radius:6px">
+                <div style="display:flex;align-items:flex-start;gap:10px;padding:8px 12px;background:var(--surface);border-radius:6px">
                     <span style="font-size:16px;flex-shrink:0">📝</span>
-                    <div style="font-size:11px;color:#8b949e;line-height:1.6">
-                        <strong style="color:#e6edf3">Edit node</strong> — klik node yang sudah ada di canvas.
+                    <div style="font-size:11px;color:var(--fg2);line-height:1.6">
+                        <strong style="color:var(--fg)">Edit node</strong> — klik node yang sudah ada di canvas.
                         Panel <em>Properties</em> akan muncul di sebelah kanan. Isi nama dan konfigurasi node, lalu klik <strong>Apply</strong>.
                     </div>
                 </div>
-                <div style="display:flex;align-items:flex-start;gap:10px;padding:8px 12px;background:#161b22;border-radius:6px">
+                <div style="display:flex;align-items:flex-start;gap:10px;padding:8px 12px;background:var(--surface);border-radius:6px">
                     <span style="font-size:16px;flex-shrink:0">↔️</span>
-                    <div style="font-size:11px;color:#8b949e;line-height:1.6">
-                        <strong style="color:#e6edf3">Pindahkan node</strong> — klik dan tahan node, lalu geser ke posisi yang diinginkan.
+                    <div style="font-size:11px;color:var(--fg2);line-height:1.6">
+                        <strong style="color:var(--fg)">Pindahkan node</strong> — klik dan tahan node, lalu geser ke posisi yang diinginkan.
                     </div>
                 </div>
             </div>
 
             <!-- Field penjelasan APPROVAL -->
-            <div style="margin-top:12px;padding:10px 12px;background:#1c1c3a;border-radius:6px;border-left:3px solid #6e40c9">
+            <div style="margin-top:12px;padding:10px 12px;background:var(--n-appr-bg);border-radius:6px;border-left:3px solid var(--n-appr-bd)">
                 <div style="font-size:11px;font-weight:700;color:#a371f7;margin-bottom:8px">
                     Penjelasan field untuk node APPROVAL:
                 </div>
-                <div style="display:grid;grid-template-columns:1fr;gap:6px;font-size:11px;color:#8b949e;line-height:1.6">
-                    <div><strong style="color:#e6edf3">Node Code</strong> — kode singkat unik, huruf kapital, contoh: <code style="background:#0d1117;padding:1px 5px;border-radius:3px">BMH</code>, <code style="background:#0d1117;padding:1px 5px;border-radius:3px">RRM</code>, <code style="background:#0d1117;padding:1px 5px;border-radius:3px">DIREKTUR</code></div>
-                    <div><strong style="color:#e6edf3">Node Name</strong> — nama tampilan, contoh: <em>"Persetujuan Branch Manager"</em></div>
-                    <div><strong style="color:#e6edf3">Approval Mode</strong> — cara approval saat ada lebih dari 1 approver:
+                <div style="display:grid;grid-template-columns:1fr;gap:6px;font-size:11px;color:var(--fg2);line-height:1.6">
+                    <div><strong style="color:var(--fg)">Node Code</strong> — kode singkat unik, huruf kapital, contoh: <code style="background:var(--bg);padding:1px 5px;border-radius:3px">BMH</code>, <code style="background:var(--bg);padding:1px 5px;border-radius:3px">RRM</code>, <code style="background:var(--bg);padding:1px 5px;border-radius:3px">DIREKTUR</code></div>
+                    <div><strong style="color:var(--fg)">Node Name</strong> — nama tampilan, contoh: <em>"Persetujuan Branch Manager"</em></div>
+                    <div><strong style="color:var(--fg)">Approval Mode</strong> — cara approval saat ada lebih dari 1 approver:
                         <div style="margin-top:4px;margin-left:12px">
                             <div>• <strong style="color:#3fb950">ANY</strong> — cukup salah satu yang approve (paling umum)</div>
                             <div>• <strong style="color:#d29922">ALL</strong> — semua harus approve</div>
                             <div>• <strong style="color:#58a6ff">SEQUENTIAL</strong> — harus urut sesuai priority</div>
                         </div>
                     </div>
-                    <div><strong style="color:#e6edf3">SLA Hours</strong> — batas waktu dalam jam (opsional). Contoh: isi <code style="background:#0d1117;padding:1px 5px;border-radius:3px">24</code> berarti harus direspon dalam 24 jam. Kosongkan jika tidak ada batas waktu.</div>
+                    <div><strong style="color:var(--fg)">SLA Hours</strong> — batas waktu dalam jam (opsional). Contoh: isi <code style="background:var(--bg);padding:1px 5px;border-radius:3px">24</code> berarti harus direspon dalam 24 jam. Kosongkan jika tidak ada batas waktu.</div>
                 </div>
             </div>
         </div>
 
         <!-- LANGKAH 3: ASSIGNEE RULE -->
-        <div style="margin-bottom:24px;background:#0d1117;border-radius:8px;padding:16px">
-            <div style="font-size:13px;font-weight:700;color:#e6edf3;margin-bottom:10px;display:flex;align-items:center;gap:8px">
+        <div style="margin-bottom:24px;background:var(--bg);border-radius:8px;padding:16px">
+            <div style="font-size:13px;font-weight:700;color:var(--fg);margin-bottom:10px;display:flex;align-items:center;gap:8px">
                 <span style="background:#1f6feb;color:#fff;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0">3</span>
                 Tentukan Siapa yang Approve (Assignee Rule)
             </div>
-            <div style="font-size:12px;color:#8b949e;line-height:1.7;margin-bottom:10px">
+            <div style="font-size:12px;color:var(--fg2);line-height:1.7;margin-bottom:10px">
                 Untuk setiap node <strong style="color:#a371f7">APPROVAL</strong>, Anda <em>wajib</em> menentukan siapa yang harus approve.
-                Klik node APPROVAL → di panel kanan ada bagian <strong style="color:#e6edf3">Assignee Rules</strong> → klik <strong>+ Tambah Assignee Rule</strong>.
+                Klik node APPROVAL → di panel kanan ada bagian <strong style="color:var(--fg)">Assignee Rules</strong> → klik <strong>+ Tambah Assignee Rule</strong>.
             </div>
-            <div style="padding:10px 12px;background:#161b22;border-radius:6px;font-size:11px;color:#8b949e;line-height:1.7">
-                <strong style="color:#e6edf3">Pilihan Type (assignee_type):</strong>
+            <div style="padding:10px 12px;background:var(--surface);border-radius:6px;font-size:11px;color:var(--fg2);line-height:1.7">
+                <strong style="color:var(--fg)">Pilihan Type (assignee_type):</strong>
                 <div style="margin-top:6px;display:flex;flex-direction:column;gap:4px">
-                    <div style="padding:5px 8px;background:#0d1117;border-radius:4px">
+                    <div style="padding:5px 8px;background:var(--bg);border-radius:4px">
                         <strong style="color:#3fb950">USER</strong> → approver adalah 1 orang tertentu.
-                        Isi Value dengan <strong>user_ref</strong> (NPK karyawan), contoh: <code style="background:#161b22;padding:1px 5px;border-radius:3px">EMP001</code>
+                        Isi Value dengan <strong>user_ref</strong> (NPK karyawan), contoh: <code style="background:var(--surface);padding:1px 5px;border-radius:3px">EMP001</code>
                     </div>
-                    <div style="padding:5px 8px;background:#0d1117;border-radius:4px">
+                    <div style="padding:5px 8px;background:var(--bg);border-radius:4px">
                         <strong style="color:#58a6ff">ROLE</strong> → semua user dengan role tertentu bisa approve.
-                        Isi Value dengan nama role, contoh: <code style="background:#161b22;padding:1px 5px;border-radius:3px">APPROVER</code>
+                        Isi Value dengan nama role, contoh: <code style="background:var(--surface);padding:1px 5px;border-radius:3px">APPROVER</code>
                     </div>
-                    <div style="padding:5px 8px;background:#0d1117;border-radius:4px">
+                    <div style="padding:5px 8px;background:var(--bg);border-radius:4px">
                         <strong style="color:#a371f7">GROUP</strong> → pool approver (grup yang sudah dibuat di Master → Approval Group).
-                        Isi Value dengan kode group, contoh: <code style="background:#161b22;padding:1px 5px;border-radius:3px">GRP_FINANCE</code>
+                        Isi Value dengan kode group, contoh: <code style="background:var(--surface);padding:1px 5px;border-radius:3px">GRP_FINANCE</code>
                     </div>
-                    <div style="padding:5px 8px;background:#0d1117;border-radius:4px">
+                    <div style="padding:5px 8px;background:var(--bg);border-radius:4px">
                         <strong style="color:#d29922">POSITION</strong> → semua user dengan jabatan tertentu.
-                        Isi Value dengan kode jabatan, contoh: <code style="background:#161b22;padding:1px 5px;border-radius:3px">BM</code> (Branch Manager)
+                        Isi Value dengan kode jabatan, contoh: <code style="background:var(--surface);padding:1px 5px;border-radius:3px">BM</code> (Branch Manager)
                     </div>
-                    <div style="padding:5px 8px;background:#0d1117;border-radius:4px">
+                    <div style="padding:5px 8px;background:var(--bg);border-radius:4px">
                         <strong style="color:#ff7b72">SUPERIOR</strong> → atasan langsung dari orang yang mengajukan dokumen (otomatis, tidak perlu isi Value).
                         Syarat: field <em>Atasan</em> di Master → User harus sudah diisi.
                     </div>
-                    <div style="padding:5px 8px;background:#0d1117;border-radius:4px">
-                        <strong style="color:#6e7681">FIELD_USER</strong> → nama approver ditentukan oleh aplikasi asal saat mengirim dokumen.
-                        Isi Value dengan nama field di data dokumen, contoh: <code style="background:#161b22;padding:1px 5px;border-radius:3px">pic_manager</code>
+                    <div style="padding:5px 8px;background:var(--bg);border-radius:4px">
+                        <strong style="color:var(--fg3)">FIELD_USER</strong> → nama approver ditentukan oleh aplikasi asal saat mengirim dokumen.
+                        Isi Value dengan nama field di data dokumen, contoh: <code style="background:var(--surface);padding:1px 5px;border-radius:3px">pic_manager</code>
                     </div>
                 </div>
             </div>
         </div>
 
         <!-- LANGKAH 4: EDGE -->
-        <div style="margin-bottom:24px;background:#0d1117;border-radius:8px;padding:16px">
-            <div style="font-size:13px;font-weight:700;color:#e6edf3;margin-bottom:10px;display:flex;align-items:center;gap:8px">
+        <div style="margin-bottom:24px;background:var(--bg);border-radius:8px;padding:16px">
+            <div style="font-size:13px;font-weight:700;color:var(--fg);margin-bottom:10px;display:flex;align-items:center;gap:8px">
                 <span style="background:#1f6feb;color:#fff;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0">4</span>
                 Hubungkan Node dengan Panah (Edge)
             </div>
-            <div style="font-size:12px;color:#8b949e;line-height:1.7;margin-bottom:10px">
+            <div style="font-size:12px;color:var(--fg2);line-height:1.7;margin-bottom:10px">
                 Panah menentukan <em>ke mana dokumen pergi selanjutnya</em> setelah sebuah aksi dilakukan.
             </div>
             <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">
-                <div style="display:flex;align-items:flex-start;gap:10px;padding:8px 12px;background:#161b22;border-radius:6px">
+                <div style="display:flex;align-items:flex-start;gap:10px;padding:8px 12px;background:var(--surface);border-radius:6px">
                     <span style="font-size:16px;flex-shrink:0">🔗</span>
-                    <div style="font-size:11px;color:#8b949e;line-height:1.6">
-                        <strong style="color:#e6edf3">Cara membuat panah</strong> — arahkan mouse ke tepi kanan node asal sampai muncul titik biru,
+                    <div style="font-size:11px;color:var(--fg2);line-height:1.6">
+                        <strong style="color:var(--fg)">Cara membuat panah</strong> — arahkan mouse ke tepi kanan node asal sampai muncul titik biru,
                         lalu klik-tahan dan seret ke node tujuan. Lepas di atas node tujuan.
                     </div>
                 </div>
-                <div style="display:flex;align-items:flex-start;gap:10px;padding:8px 12px;background:#161b22;border-radius:6px">
+                <div style="display:flex;align-items:flex-start;gap:10px;padding:8px 12px;background:var(--surface);border-radius:6px">
                     <span style="font-size:16px;flex-shrink:0">✏️</span>
-                    <div style="font-size:11px;color:#8b949e;line-height:1.6">
-                        <strong style="color:#e6edf3">Edit panah</strong> — klik panah yang sudah ada, panel Properties akan muncul di kanan.
+                    <div style="font-size:11px;color:var(--fg2);line-height:1.6">
+                        <strong style="color:var(--fg)">Edit panah</strong> — klik panah yang sudah ada, panel Properties akan muncul di kanan.
                         Field terpenting adalah <strong>action_code</strong>.
                     </div>
                 </div>
             </div>
-            <div style="padding:10px 12px;background:#161b22;border-radius:6px;font-size:11px;color:#8b949e;line-height:1.7">
-                <strong style="color:#e6edf3">Penjelasan field Edge:</strong>
+            <div style="padding:10px 12px;background:var(--surface);border-radius:6px;font-size:11px;color:var(--fg2);line-height:1.7">
+                <strong style="color:var(--fg)">Penjelasan field Edge:</strong>
                 <div style="margin-top:6px;display:flex;flex-direction:column;gap:5px">
-                    <div><strong style="color:#e6edf3">action_code</strong> — <em>aksi apa yang memicu panah ini.</em> Pilihan standar:
+                    <div><strong style="color:var(--fg)">action_code</strong> — <em>aksi apa yang memicu panah ini.</em> Pilihan standar:
                         <div style="margin-top:3px;margin-left:12px">
                             <div>• <strong style="color:#3fb950">SUBMIT</strong> — dokumen baru masuk (dipakai dari START)</div>
                             <div>• <strong style="color:#3fb950">APPROVE</strong> — approver menyetujui</div>
                             <div>• <strong style="color:#ff7b72">REJECT</strong> — approver menolak</div>
                             <div>• <strong style="color:#d29922">RETURN</strong> — approver mengembalikan untuk direvisi</div>
-                            <div>• <strong style="color:#6e7681">AUTO</strong> — sistem otomatis meneruskan (dipakai dari DECISION)</div>
+                            <div>• <strong style="color:var(--fg3)">AUTO</strong> — sistem otomatis meneruskan (dipakai dari DECISION)</div>
                         </div>
                     </div>
-                    <div><strong style="color:#e6edf3">priority_no</strong> — urutan evaluasi. Angka lebih kecil = diperiksa lebih dulu. Pakai 100, 200, 300 dst agar mudah disisipkan.</div>
-                    <div><strong style="color:#e6edf3">final_status</strong> — status akhir dokumen saat melewati panah ini dan mencapai END.
-                        Contoh: isi <code style="background:#0d1117;padding:1px 5px;border-radius:3px">APPROVED</code> untuk panah APPROVE ke END,
-                        dan <code style="background:#0d1117;padding:1px 5px;border-radius:3px">REJECTED</code> untuk panah REJECT ke END.
+                    <div><strong style="color:var(--fg)">priority_no</strong> — urutan evaluasi. Angka lebih kecil = diperiksa lebih dulu. Pakai 100, 200, 300 dst agar mudah disisipkan.</div>
+                    <div><strong style="color:var(--fg)">final_status</strong> — status akhir dokumen saat melewati panah ini dan mencapai END.
+                        Contoh: isi <code style="background:var(--bg);padding:1px 5px;border-radius:3px">APPROVED</code> untuk panah APPROVE ke END,
+                        dan <code style="background:var(--bg);padding:1px 5px;border-radius:3px">REJECTED</code> untuk panah REJECT ke END.
                     </div>
-                    <div><strong style="color:#e6edf3">Default transition</strong> — centang ini pada salah satu panah jika Anda ingin ada jalur cadangan
+                    <div><strong style="color:var(--fg)">Default transition</strong> — centang ini pada salah satu panah jika Anda ingin ada jalur cadangan
                         ketika tidak ada kondisi yang cocok (terutama dari DECISION node).</div>
-                    <div><strong style="color:#e6edf3">condition_json</strong> — isi hanya untuk DECISION node. Kosongkan untuk alur normal.
+                    <div><strong style="color:var(--fg)">condition_json</strong> — isi hanya untuk DECISION node. Kosongkan untuk alur normal.
                         Contoh kondisi nilai &gt; 10 juta:<br>
-                        <code style="background:#0d1117;padding:2px 6px;border-radius:3px;font-size:10px">{"op":"&gt;","field":"nilai_retur","value":10000000}</code>
+                        <code style="background:var(--bg);padding:2px 6px;border-radius:3px;font-size:10px">{"op":"&gt;","field":"nilai_retur","value":10000000}</code>
                     </div>
                 </div>
             </div>
         </div>
 
         <!-- LANGKAH 5: SAVE VALIDATE DEPLOY -->
-        <div style="margin-bottom:24px;background:#0d1117;border-radius:8px;padding:16px">
-            <div style="font-size:13px;font-weight:700;color:#e6edf3;margin-bottom:12px;display:flex;align-items:center;gap:8px">
+        <div style="margin-bottom:24px;background:var(--bg);border-radius:8px;padding:16px">
+            <div style="font-size:13px;font-weight:700;color:var(--fg);margin-bottom:12px;display:flex;align-items:center;gap:8px">
                 <span style="background:#1f6feb;color:#fff;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0">5</span>
                 Simpan → Validasi → Deploy
             </div>
             <div style="display:flex;flex-direction:column;gap:10px">
                 <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 12px;background:#1f6feb22;border:1px solid #1f6feb44;border-radius:6px">
                     <span style="background:#1f6feb;color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:4px;flex-shrink:0;margin-top:1px">SAVE</span>
-                    <div style="font-size:11px;color:#8b949e;line-height:1.6">
-                        Simpan semua perubahan canvas ke database. <strong style="color:#e6edf3">Lakukan ini setiap selesai membuat perubahan.</strong>
+                    <div style="font-size:11px;color:var(--fg2);line-height:1.6">
+                        Simpan semua perubahan canvas ke database. <strong style="color:var(--fg)">Lakukan ini setiap selesai membuat perubahan.</strong>
                         Status akan tetap DRAFT — dokumen belum bisa menggunakan flow ini.
                     </div>
                 </div>
                 <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 12px;background:#9e6a0322;border:1px solid #9e6a0344;border-radius:6px">
                     <span style="background:#9e6a03;color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:4px;flex-shrink:0;margin-top:1px">VALIDATE</span>
-                    <div style="font-size:11px;color:#8b949e;line-height:1.6">
+                    <div style="font-size:11px;color:var(--fg2);line-height:1.6">
                         Sistem memeriksa apakah flow sudah benar: ada START & END, semua APPROVAL punya approver,
-                        semua node terhubung, tidak ada jalur yang tergantung. <strong style="color:#e6edf3">Wajib VALID sebelum bisa Deploy.</strong>
+                        semua node terhubung, tidak ada jalur yang tergantung. <strong style="color:var(--fg)">Wajib VALID sebelum bisa Deploy.</strong>
                         Hasil error akan muncul di panel bawah.
                     </div>
                 </div>
                 <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 12px;background:#23863622;border:1px solid #23863644;border-radius:6px">
                     <span style="background:#238636;color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:4px;flex-shrink:0;margin-top:1px">DEPLOY</span>
-                    <div style="font-size:11px;color:#8b949e;line-height:1.6">
+                    <div style="font-size:11px;color:var(--fg2);line-height:1.6">
                         Aktifkan flow ini. Setelah Deploy, status menjadi <strong style="color:#3fb950">ACTIVE</strong> dan dokumen sudah bisa
                         menggunakan alur ini. <strong style="color:#ff7b72">Setelah ACTIVE dan sudah dipakai, flow tidak bisa diedit langsung.</strong>
                         Gunakan <strong>Clone</strong> untuk membuat versi baru jika perlu perubahan.
@@ -599,7 +602,7 @@
                 </div>
                 <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 12px;background:#6e40c922;border:1px solid #6e40c944;border-radius:6px">
                     <span style="background:#6e40c9;color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:4px;flex-shrink:0;margin-top:1px">CLONE</span>
-                    <div style="font-size:11px;color:#8b949e;line-height:1.6">
+                    <div style="font-size:11px;color:var(--fg2);line-height:1.6">
                         Buat salinan flow ini sebagai versi baru (DRAFT). Gunakan jika ingin mengubah flow yang
                         sudah ACTIVE tanpa mengganggu dokumen yang sedang berjalan.
                     </div>
@@ -608,61 +611,61 @@
         </div>
 
         <!-- CONTOH FLOW SEDERHANA -->
-        <div style="margin-bottom:24px;background:#0d1117;border-radius:8px;padding:16px">
-            <div style="font-size:13px;font-weight:700;color:#e6edf3;margin-bottom:12px;display:flex;align-items:center;gap:8px">
+        <div style="margin-bottom:24px;background:var(--bg);border-radius:8px;padding:16px">
+            <div style="font-size:13px;font-weight:700;color:var(--fg);margin-bottom:12px;display:flex;align-items:center;gap:8px">
                 <span style="background:#1f6feb;color:#fff;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0">💡</span>
                 Contoh: Flow 2 Level Persetujuan
             </div>
-            <div style="font-size:11px;color:#8b949e;line-height:1.8;margin-bottom:12px">
+            <div style="font-size:11px;color:var(--fg2);line-height:1.8;margin-bottom:12px">
                 Misalnya Anda ingin membuat flow: dokumen harus disetujui Manager dulu, lalu Direktur.
             </div>
             <div style="display:flex;flex-direction:column;gap:4px;font-size:11px">
-                <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#161b22;border-radius:5px">
+                <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--surface);border-radius:5px">
                     <span style="color:#3fb950;font-weight:700;flex-shrink:0">Step 1</span>
-                    <span style="color:#484f58">→</span>
-                    <span style="color:#8b949e">Drag node <strong style="color:#3fb950">START</strong> ke canvas, beri nama <em>"Mulai"</em></span>
+                    <span style="color:var(--fg4)">→</span>
+                    <span style="color:var(--fg2)">Drag node <strong style="color:#3fb950">START</strong> ke canvas, beri nama <em>"Mulai"</em></span>
                 </div>
-                <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#161b22;border-radius:5px">
+                <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--surface);border-radius:5px">
                     <span style="color:#a371f7;font-weight:700;flex-shrink:0">Step 2</span>
-                    <span style="color:#484f58">→</span>
-                    <span style="color:#8b949e">Drag node <strong style="color:#a371f7">APPROVAL</strong> → Node Code: <code style="background:#0d1117;padding:1px 4px;border-radius:3px">MGR</code>, Nama: <em>"Persetujuan Manager"</em></span>
+                    <span style="color:var(--fg4)">→</span>
+                    <span style="color:var(--fg2)">Drag node <strong style="color:#a371f7">APPROVAL</strong> → Node Code: <code style="background:var(--bg);padding:1px 4px;border-radius:3px">MGR</code>, Nama: <em>"Persetujuan Manager"</em></span>
                 </div>
-                <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#161b22;border-radius:5px">
+                <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--surface);border-radius:5px">
                     <span style="color:#a371f7;font-weight:700;flex-shrink:0">Step 3</span>
-                    <span style="color:#484f58">→</span>
-                    <span style="color:#8b949e">Di node MGR, tambah Assignee Rule: Type = <strong>POSITION</strong>, Value = <code style="background:#0d1117;padding:1px 4px;border-radius:3px">MANAGER</code></span>
+                    <span style="color:var(--fg4)">→</span>
+                    <span style="color:var(--fg2)">Di node MGR, tambah Assignee Rule: Type = <strong>POSITION</strong>, Value = <code style="background:var(--bg);padding:1px 4px;border-radius:3px">MANAGER</code></span>
                 </div>
-                <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#161b22;border-radius:5px">
+                <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--surface);border-radius:5px">
                     <span style="color:#a371f7;font-weight:700;flex-shrink:0">Step 4</span>
-                    <span style="color:#484f58">→</span>
-                    <span style="color:#8b949e">Drag node <strong style="color:#a371f7">APPROVAL</strong> lagi → Node Code: <code style="background:#0d1117;padding:1px 4px;border-radius:3px">DIR</code>, Nama: <em>"Persetujuan Direktur"</em> → Assignee Rule: Type = <strong>USER</strong>, Value = NPK direktur</span>
+                    <span style="color:var(--fg4)">→</span>
+                    <span style="color:var(--fg2)">Drag node <strong style="color:#a371f7">APPROVAL</strong> lagi → Node Code: <code style="background:var(--bg);padding:1px 4px;border-radius:3px">DIR</code>, Nama: <em>"Persetujuan Direktur"</em> → Assignee Rule: Type = <strong>USER</strong>, Value = NPK direktur</span>
                 </div>
-                <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#161b22;border-radius:5px">
-                    <span style="color:#6e7681;font-weight:700;flex-shrink:0">Step 5</span>
-                    <span style="color:#484f58">→</span>
-                    <span style="color:#8b949e">Drag node <strong style="color:#6e7681">END</strong> → beri nama <em>"Selesai"</em></span>
+                <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--surface);border-radius:5px">
+                    <span style="color:var(--fg3);font-weight:700;flex-shrink:0">Step 5</span>
+                    <span style="color:var(--fg4)">→</span>
+                    <span style="color:var(--fg2)">Drag node <strong style="color:var(--fg3)">END</strong> → beri nama <em>"Selesai"</em></span>
                 </div>
-                <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#161b22;border-radius:5px">
+                <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--surface);border-radius:5px">
                     <span style="color:#58a6ff;font-weight:700;flex-shrink:0">Step 6</span>
-                    <span style="color:#484f58">→</span>
-                    <span style="color:#8b949e">Hubungkan: <strong>START → MGR</strong> (action: SUBMIT), <strong>MGR → DIR</strong> (action: APPROVE), <strong>MGR → END</strong> (action: REJECT, final_status: REJECTED), <strong>DIR → END</strong> (action: APPROVE, final_status: APPROVED), <strong>DIR → END</strong> (action: REJECT, final_status: REJECTED)</span>
+                    <span style="color:var(--fg4)">→</span>
+                    <span style="color:var(--fg2)">Hubungkan: <strong>START → MGR</strong> (action: SUBMIT), <strong>MGR → DIR</strong> (action: APPROVE), <strong>MGR → END</strong> (action: REJECT, final_status: REJECTED), <strong>DIR → END</strong> (action: APPROVE, final_status: APPROVED), <strong>DIR → END</strong> (action: REJECT, final_status: REJECTED)</span>
                 </div>
-                <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#0d4429;border:1px solid #238636;border-radius:5px">
+                <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--n-start-bg);border:1px solid var(--n-start-bd);border-radius:5px">
                     <span style="color:#3fb950;font-weight:700;flex-shrink:0">Step 7</span>
-                    <span style="color:#484f58">→</span>
-                    <span style="color:#8b949e">Klik <strong style="color:#3fb950">Save</strong> → klik <strong style="color:#d29922">Validate</strong> → kalau VALID klik <strong style="color:#3fb950">Deploy</strong> ✓</span>
+                    <span style="color:var(--fg4)">→</span>
+                    <span style="color:var(--fg2)">Klik <strong style="color:#3fb950">Save</strong> → klik <strong style="color:#d29922">Validate</strong> → kalau VALID klik <strong style="color:#3fb950">Deploy</strong> ✓</span>
                 </div>
             </div>
         </div>
 
         <!-- TIPS -->
-        <div style="background:#161b22;border-radius:8px;padding:14px 16px;border:1px solid #21262d">
-            <div style="font-size:12px;font-weight:700;color:#e6edf3;margin-bottom:10px">⌨️ Shortcut & Tips</div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11px;color:#8b949e;line-height:1.6">
-                <div><kbd style="background:#0d1117;border:1px solid #30363d;border-radius:3px;padding:1px 5px;color:#e6edf3">Del</kbd> — hapus node/edge yang dipilih</div>
-                <div><kbd style="background:#0d1117;border:1px solid #30363d;border-radius:3px;padding:1px 5px;color:#e6edf3">Scroll</kbd> — zoom in/out canvas</div>
-                <div><kbd style="background:#0d1117;border:1px solid #30363d;border-radius:3px;padding:1px 5px;color:#e6edf3">Klik+Drag canvas</kbd> — geser tampilan</div>
-                <div><kbd style="background:#0d1117;border:1px solid #30363d;border-radius:3px;padding:1px 5px;color:#e6edf3">⊞ Fit View</kbd> — tampilkan semua node</div>
+        <div style="background:var(--surface);border-radius:8px;padding:14px 16px;border:1px solid var(--border)">
+            <div style="font-size:12px;font-weight:700;color:var(--fg);margin-bottom:10px">⌨️ Shortcut & Tips</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11px;color:var(--fg2);line-height:1.6">
+                <div><kbd style="background:var(--bg);border:1px solid var(--border2);border-radius:3px;padding:1px 5px;color:var(--fg)">Del</kbd> — hapus node/edge yang dipilih</div>
+                <div><kbd style="background:var(--bg);border:1px solid var(--border2);border-radius:3px;padding:1px 5px;color:var(--fg)">Scroll</kbd> — zoom in/out canvas</div>
+                <div><kbd style="background:var(--bg);border:1px solid var(--border2);border-radius:3px;padding:1px 5px;color:var(--fg)">Klik+Drag canvas</kbd> — geser tampilan</div>
+                <div><kbd style="background:var(--bg);border:1px solid var(--border2);border-radius:3px;padding:1px 5px;color:var(--fg)">⊞ Fit View</kbd> — tampilkan semua node</div>
                 <div style="color:#ff7b72">⚠ Selalu klik Save setelah selesai mengedit</div>
                 <div style="color:#ff7b72">⚠ Deploy hanya bisa dilakukan setelah Validate berhasil</div>
             </div>
@@ -832,7 +835,7 @@ function App() {
             label: act,
             type: 'smoothstep',
             markerEnd: { type: MarkerType.ArrowClosed, color: '#484f58' },
-            style: { stroke:'#484f58', strokeWidth:2 },
+            style: { stroke:'var(--fg4)', strokeWidth:2 },
             data: {
                 transition_code: fc+'_TO_'+tc,
                 transition_name: '',
@@ -880,7 +883,7 @@ function App() {
             defaultEdgeOptions: {
                 type: 'smoothstep',
                 markerEnd: { type: MarkerType.ArrowClosed, color:'#484f58' },
-                style: { stroke:'#484f58', strokeWidth:2 },
+                style: { stroke:'var(--fg4)', strokeWidth:2 },
             },
             style: { width:'100%', height:'100%', background:'var(--bg)' },
         },
@@ -974,7 +977,7 @@ async function loadData() {
                 id: e.id, source: e.source, target: e.target, label: e.label,
                 type: 'smoothstep',
                 markerEnd: { type: MarkerType.ArrowClosed, color:'#484f58' },
-                style: { stroke:'#484f58', strokeWidth:2 },
+                style: { stroke:'var(--fg4)', strokeWidth:2 },
                 idtblflow_transition: e.idtblflow_transition,
                 data: Object.assign({}, e.data, {
                     idtblflow_transition: e.idtblflow_transition,
@@ -1026,7 +1029,7 @@ async function loadDataKeepViewport(viewport) {
                 id: e.id, source: e.source, target: e.target, label: e.label,
                 type: 'smoothstep',
                 markerEnd: { type: MarkerType.ArrowClosed, color:'#484f58' },
-                style: { stroke:'#484f58', strokeWidth:2 },
+                style: { stroke:'var(--fg4)', strokeWidth:2 },
                 idtblflow_transition: e.idtblflow_transition,
                 data: Object.assign({}, e.data, {
                     idtblflow_transition: e.idtblflow_transition,
@@ -1345,14 +1348,14 @@ function ruleHtml(r) {
         var savedLabel = esc(r.assignee_value_label || r.assignee_value || '');
         valueHtml =
             '<div class="fg" style="position:relative">'+
-                '<label>Jabatan <span style="color:#484f58;font-size:10px">(ketik untuk cari, simpan ID)</span></label>'+
+                '<label>Jabatan <span style="color:var(--fg4);font-size:10px">(ketik untuk cari, simpan ID)</span></label>'+
                 '<input class="rv-jt-search" type="text" autocomplete="off"'+
                     ' placeholder="Ketik nama jabatan..." value="'+savedLabel+'"'+
                     ' data-saved-id="'+savedId+'"'+
                     ' oninput="onJTSearch(this)" style="margin-bottom:2px">'+
                 '<input class="rv" type="hidden" value="'+savedId+'">'+
                 '<div class="rv-jt-results" style="display:none;position:absolute;z-index:999;'+
-                    'background:#161b22;border:1px solid #30363d;border-radius:5px;'+
+                    'background:var(--surface);border:1px solid var(--border2);border-radius:5px;'+
                     'max-height:180px;overflow-y:auto;width:100%;font-size:11px;'+
                     'box-shadow:0 4px 12px rgba(0,0,0,.5);top:100%;left:0"></div>'+
                 '<div class="rv-jt-disp" style="font-size:10px;color:#3fb950;margin-top:2px">'+
@@ -1366,7 +1369,7 @@ function ruleHtml(r) {
         valueHtml = '<div class="fg"><label>Value</label>'+
             '<input class="rv" value="'+esc(r.assignee_value||'')+'"'+
             ' placeholder="'+esc(hint)+'" oninput="markDirty()">'+
-            (hint ? '<div style="font-size:10px;color:#484f58;margin-top:2px">'+esc(hint)+'</div>' : '')+
+            (hint ? '<div style="font-size:10px;color:var(--fg4);margin-top:2px">'+esc(hint)+'</div>' : '')+
             '</div>';
     }
     return '<div class="ri" data-rid="'+(r.idtblstep_assignee_rule||'')+'" style="position:relative">'+
@@ -1416,16 +1419,16 @@ window.onJTSearch = function(inp) {
         .then(function(r){return r.json();})
         .then(function(data){
             if (!data.success||!data.data.length) {
-                resDiv.innerHTML='<div style="padding:8px 10px;color:#6e7681">Tidak ditemukan</div>';
+                resDiv.innerHTML='<div style="padding:8px 10px;color:var(--fg3)">Tidak ditemukan</div>';
             } else {
                 resDiv.innerHTML = data.data.map(function(jt){
                     return '<div class="jt-opt" data-id="'+esc(jt.id)+'" data-name="'+esc(jt.name)+'"'+
-                        ' style="padding:7px 10px;cursor:pointer;border-bottom:1px solid #21262d"'+
-                        ' onmouseover="this.style.background=\'#21262d\'"'+
+                        ' style="padding:7px 10px;cursor:pointer;border-bottom:1px solid var(--border)"'+
+                        ' onmouseover="this.style.background=\'var(--raised)\'"'+
                         ' onmouseout="this.style.background=\'\'"'+
                         ' onclick="selectJT(this)">'+
-                        '<span style="color:#e6edf3">'+esc(jt.name)+'</span>'+
-                        ' <span style="color:#484f58;font-size:10px">'+esc(jt.id)+' \u2022 '+jt.count+' org</span>'+
+                        '<span style="color:var(--fg)">'+esc(jt.name)+'</span>'+
+                        ' <span style="color:var(--fg4);font-size:10px">'+esc(jt.id)+' \u2022 '+jt.count+' org</span>'+
                     '</div>';
                 }).join('');
             }
@@ -1504,13 +1507,13 @@ function collectRules() {
 window.condH = function(tid, hid) {
     var el = document.getElementById(hid); if (!el) return;
     el.innerHTML =
-    '<div style="background:#0d1117;border:1px solid #21262d;border-radius:5px;padding:8px;margin-top:4px">'+
-    '<div style="font-size:10px;color:#6e7681;margin-bottom:4px">Quick add:</div>'+
-    '<input id="chf'+tid+'" placeholder="field name" style="width:100%;padding:4px 6px;font-size:11px;background:#0d1117;border:1px solid #21262d;border-radius:4px;color:#e6edf3;margin-bottom:4px">'+
-    '<select id="cho'+tid+'" style="width:100%;padding:4px;font-size:11px;background:#0d1117;border:1px solid #21262d;border-radius:4px;color:#e6edf3;margin-bottom:4px">'+
+    '<div style="background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:8px;margin-top:4px">'+
+    '<div style="font-size:10px;color:var(--fg3);margin-bottom:4px">Quick add:</div>'+
+    '<input id="chf'+tid+'" placeholder="field name" style="width:100%;padding:4px 6px;font-size:11px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--fg);margin-bottom:4px">'+
+    '<select id="cho'+tid+'" style="width:100%;padding:4px;font-size:11px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--fg);margin-bottom:4px">'+
     ['=','!=','>','>=','<','<=','IN','NOT_IN','BETWEEN','CONTAINS'].map(function(op){ return '<option>'+op+'</option>'; }).join('')+
     '</select>'+
-    '<input id="chv'+tid+'" placeholder="value (IN: a,b,c | BETWEEN: 1,2)" style="width:100%;padding:4px 6px;font-size:11px;background:#0d1117;border:1px solid #21262d;border-radius:4px;color:#e6edf3;margin-bottom:6px">'+
+    '<input id="chv'+tid+'" placeholder="value (IN: a,b,c | BETWEEN: 1,2)" style="width:100%;padding:4px 6px;font-size:11px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--fg);margin-bottom:6px">'+
     '<button class="badd" onclick="apCondH(\''+tid+'\')">Insert JSON</button>'+
     '</div>';
 };
