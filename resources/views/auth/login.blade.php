@@ -6,6 +6,10 @@
     <div class="card-body p-4">
         <h5 class="card-title mb-3">Masuk ke Approval Center</h5>
 
+        @if (session('error'))
+            <div class="alert alert-warning small">{{ session('error') }}</div>
+        @endif
+
         @if ($errors->any())
             <div class="alert alert-danger">
                 <ul class="mb-0 small">

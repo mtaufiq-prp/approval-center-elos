@@ -37,9 +37,25 @@ return Application::configure(basePath: dirname(__DIR__))
     })
     ->withExceptions(function (Exceptions $exceptions) {
         // Semua error pada API harus JSON dengan format konsisten.
-        // Detail handler akan diisi di Tahap 7.
         $exceptions->shouldRenderJsonWhen(function ($request, $exception) {
             return $request->is('api/*') || $request->expectsJson();
+        });
+
+        // Graceful 419: CSRF token mismatch / sesi kedaluwarsa pada request web.
+        // Daripada halaman "Page Expired" yang membingungkan, kembalikan user ke
+        // halaman sebelumnya (atau login) dengan pesan jelas + token segar.
+        $exceptions->render(function (\Illuminate\Session\TokenMismatchException $e, $request) {
+            if ($request->is('api/*') || $request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'error_code' => 'PAGE_EXPIRED',
+                    'message' => 'Sesi kedaluwarsa. Muat ulang lalu coba lagi.',
+                ], 419);
+            }
+            return redirect()
+                ->guest(route('login'))
+                ->withInput($request->except(['password', 'password_confirmation', '_token']))
+                ->with('error', 'Sesi Anda telah kedaluwarsa. Silakan login kembali.');
         });
     })
     ->create();
