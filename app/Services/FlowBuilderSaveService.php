@@ -189,10 +189,13 @@ class FlowBuilderSaveService
                             ?? (preg_match('/node_(\d+)/', $targetKey, $m) ? (int) $m[1] : null);
                     }
 
-                    // Auto-generate transition_code — gunakan cache, bukan find() (#26)
-                    $fromCode = $stepCodeMap->get($sourceDbId) ?? 'FROM';
-                    $toCode   = $targetDbId ? ($stepCodeMap->get($targetDbId) ?? 'TO') : 'END';
-                    $autoCode = strtoupper("{$fromCode}_TO_{$toCode}");
+                    // Auto-generate transition_code — gunakan cache, bukan find() (#26).
+                    // Fallback ke id node (bukan literal 'FROM'/'TO') + SELALU suffix id from→to
+                    // agar UNIK per edge: satu node bisa punya banyak edge keluar (percabangan),
+                    // dan code yang tidak ter-resolve tidak boleh bentrok di uq_(version,transition_code).
+                    $fromCode = $stepCodeMap->get($sourceDbId) ?? ('N' . $sourceDbId);
+                    $toCode   = $targetDbId ? ($stepCodeMap->get($targetDbId) ?? ('N' . $targetDbId)) : 'END';
+                    $autoCode = strtoupper("{$fromCode}_TO_{$toCode}_{$sourceDbId}_" . ($targetDbId ?: 'END'));
 
                     $edgeData = [
                         'idtblflow_version'    => $version->idtblflow_version,
