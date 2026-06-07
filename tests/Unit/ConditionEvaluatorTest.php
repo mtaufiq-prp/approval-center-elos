@@ -182,4 +182,27 @@ class ConditionEvaluatorTest extends TestCase
         $cond = ['op' => 'IS_NULL', 'field' => 'missing.key', 'value' => null];
         $this->assertTrue($this->svc->evaluate($cond, []));
     }
+
+    // ── Depth guard (anti nested-bomb) ──────────────────────────────────────
+
+    public function test_deeply_nested_condition_throws(): void
+    {
+        // Bangun GROUP bersarang > 20 level → harus dilempar (DoS guard).
+        $cond = ['op' => '=', 'field' => 'x', 'value' => 1];
+        for ($i = 0; $i < 25; $i++) {
+            $cond = ['logic' => 'AND', 'conditions' => [$cond]];
+        }
+        $this->expectException(\RuntimeException::class);
+        $this->svc->evaluate($cond, ['x' => 1]);
+    }
+
+    public function test_reasonable_nesting_ok(): void
+    {
+        // 5 level masih jauh di bawah batas → evaluasi normal.
+        $cond = ['op' => '=', 'field' => 'x', 'value' => 1];
+        for ($i = 0; $i < 5; $i++) {
+            $cond = ['logic' => 'AND', 'conditions' => [$cond]];
+        }
+        $this->assertTrue($this->svc->evaluate($cond, ['x' => 1]));
+    }
 }

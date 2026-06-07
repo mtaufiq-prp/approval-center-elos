@@ -27,12 +27,26 @@ class ConditionEvaluatorService
     /** @param array $context  Biasanya berasal dari approval_request.context_json */
     public function evaluate(?array $condition, array $context): bool
     {
+        return $this->evaluateAt($condition, $context, 0);
+    }
+
+    /**
+     * Evaluasi rekursif dengan guard kedalaman (config rule_engine.max_depth)
+     * untuk mencegah nested condition_json patologis (stack overflow / DoS).
+     */
+    private function evaluateAt(?array $condition, array $context, int $depth): bool
+    {
         if (empty($condition)) return true;
         if (! is_array($condition)) return true;
 
+        $maxDepth = $this->maxDepth();
+        if ($depth > $maxDepth) {
+            throw new RuntimeException("condition_json melebihi kedalaman maksimum ({$maxDepth}).");
+        }
+
         // GROUP
         if (isset($condition['logic'])) {
-            return $this->evaluateGroup($condition, $context);
+            return $this->evaluateGroup($condition, $context, $depth);
         }
 
         // LEAF
@@ -44,7 +58,17 @@ class ConditionEvaluatorService
         return true;
     }
 
-    private function evaluateGroup(array $node, array $context): bool
+    /** Baca max_depth dari config dengan fallback aman (mis. saat unit test tanpa container). */
+    private function maxDepth(): int
+    {
+        try {
+            return (int) config('approval_center.rule_engine.max_depth', 20);
+        } catch (\Throwable) {
+            return 20;
+        }
+    }
+
+    private function evaluateGroup(array $node, array $context, int $depth = 0): bool
     {
         $logic = strtoupper($node['logic'] ?? 'AND');
         $conditions = $node['conditions'] ?? [];
@@ -53,14 +77,14 @@ class ConditionEvaluatorService
 
         if ($logic === 'AND') {
             foreach ($conditions as $c) {
-                if (! $this->evaluate($c, $context)) return false;
+                if (! $this->evaluateAt($c, $context, $depth + 1)) return false;
             }
             return true;
         }
 
         // OR
         foreach ($conditions as $c) {
-            if ($this->evaluate($c, $context)) return true;
+            if ($this->evaluateAt($c, $context, $depth + 1)) return true;
         }
         return false;
     }
