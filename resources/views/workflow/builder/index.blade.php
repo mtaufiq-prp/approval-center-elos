@@ -834,8 +834,6 @@ function App() {
             idtblflow_transition: null,
             label: act,
             type: 'smoothstep',
-            markerEnd: { type: MarkerType.ArrowClosed, color: '#484f58' },
-            style: { stroke:'var(--fg4)', strokeWidth:2 },
             data: {
                 transition_code: fc+'_TO_'+tc,
                 transition_name: '',
@@ -846,6 +844,7 @@ function App() {
                 final_status: '', condition_json: null,
             },
         });
+        styleOneEdge(newEdge); // warna stroke + border label langsung (tanpa perlu Save)
         setEdges(function(eds) { return addEdge(newEdge, eds); });
         markDirty();
     }, [rfHook, setEdges]);
@@ -919,25 +918,32 @@ rfRoot.render(h(ReactFlowProvider, {}, h(App)));
 // ============================================================
 // Helper: beri warna per action_code + offset edge paralel (same source+target)
 // supaya REJECT/APPROVE_END/dst tidak tumpang tindih.
+var EDGE_COLOR = {
+    APPROVE:'#56d364', AUTO_APPROVE:'#56d364',
+    REJECT:'#ff7b72', RETURN:'#d29922',
+    CANCEL:'#8b949e', SUBMIT:'#79c0ff', AUTO:'#7d8590'
+};
+
+// Terapkan warna stroke + marker + label (teks & border) sesuai action_code ke SATU edge.
+// Dipakai styleEdges (load), onConnect (edge baru), & applyEdge (ubah aksi) agar border
+// langsung muncul tanpa perlu Save dulu.
+function styleOneEdge(e) {
+    var ac = ((e.data && e.data.action_code) || '').toUpperCase();
+    var c  = EDGE_COLOR[ac] || '#484f58';
+    e.style = { stroke:c, strokeWidth:2 };
+    if (ac === 'REJECT') e.style.strokeDasharray = '6 4';
+    e.markerEnd = { type: MarkerType.ArrowClosed, color:c };
+    e.labelStyle = { fontSize: 11, fontWeight: 600, fill: c };
+    // Tanpa fill inline → bg di-handle CSS .react-flow__edge-textbg (ikut tema).
+    // Border berwarna sesuai aksi agar label terlihat jelas di kanvas terang.
+    e.labelBgStyle = { fillOpacity: 0.95, stroke: c, strokeWidth: 1.5 };
+    e.labelBgPadding = [6, 3];
+    e.labelBgBorderRadius = 5;
+    return e;
+}
+
 function styleEdges(rfEdges) {
-    var COLOR = {
-        APPROVE:'#56d364', AUTO_APPROVE:'#56d364',
-        REJECT:'#ff7b72', RETURN:'#d29922',
-        CANCEL:'#8b949e', SUBMIT:'#79c0ff', AUTO:'#7d8590'
-    };
-    rfEdges.forEach(function(e){
-        var ac = ((e.data && e.data.action_code) || '').toUpperCase();
-        var c  = COLOR[ac] || '#484f58';
-        e.style = { stroke:c, strokeWidth:2 };
-        if (ac === 'REJECT') e.style.strokeDasharray = '6 4';
-        e.markerEnd = { type: MarkerType.ArrowClosed, color:c };
-        e.labelStyle = { fontSize: 11, fontWeight: 600, fill: c };
-        // Tanpa fill inline → bg di-handle CSS .react-flow__edge-textbg (ikut tema).
-        // Border berwarna sesuai aksi agar label terlihat jelas di kanvas terang.
-        e.labelBgStyle = { fillOpacity: 0.95, stroke: c, strokeWidth: 1.5 };
-        e.labelBgPadding = [6, 3];
-        e.labelBgBorderRadius = 5;
-    });
+    rfEdges.forEach(styleOneEdge);
 
     var groups = {};
     rfEdges.forEach(function(e){
@@ -1301,7 +1307,7 @@ window.applyEdge = function() {
     G.setEdges(function(es) {
         return es.map(function(e) {
             if (e.id !== id) return e;
-            return Object.assign({}, e, { label: ac, data: Object.assign({}, e.data, {
+            var updated = Object.assign({}, e, { label: ac, data: Object.assign({}, e.data, {
                 action_code:     ac,
                 transition_code: (g('etc') && g('etc').value.trim()) || e.data.transition_code,
                 transition_name: (g('etn') && g('etn').value.trim()) || '',
@@ -1311,6 +1317,7 @@ window.applyEdge = function() {
                 is_active:       g('eac2') ? g('eac2').checked : true,
                 condition_json:  parseJ('ecj'),
             }) });
+            return styleOneEdge(updated); // perbarui warna/border sesuai aksi baru
         });
     });
     markDirty(); toast('Edge diperbarui.','ok');
