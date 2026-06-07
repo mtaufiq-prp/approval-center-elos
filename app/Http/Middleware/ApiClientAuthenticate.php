@@ -17,16 +17,21 @@ use Symfony\Component\HttpFoundation\Response;
  *  1. Header X-Client-Key, X-Timestamp, X-Signature wajib ada.
  *  2. API Client terdaftar & is_active = 1.
  *  3. IP allowed_ip check.
- *  4. X-Timestamp freshness ±300 detik (anti-replay).
- *  5. HMAC-SHA256(X-Timestamp + "\n" + raw_body, plain_secret) cocok.
+ *  4. X-Timestamp freshness (config approval_center.api_security.time_tolerance_seconds,
+ *     default ±300 detik) + X-Nonce anti-replay.
+ *  5. HMAC-SHA256(X-Timestamp + "\n" + X-Nonce + "\n" + raw_body, plain_secret) cocok.
  *
  * Setelah lolos, ApiClient di-inject ke $request->attributes('api_client').
  */
 class ApiClientAuthenticate
 {
-    private const TOLERANCE = 300;
-
     public function __construct(private ApiClientSecretService $secretService) {}
+
+    /** Toleransi waktu (detik) dari config; default 300. */
+    private function tolerance(): int
+    {
+        return (int) config('approval_center.api_security.time_tolerance_seconds', 300);
+    }
 
     public function handle(Request $request, Closure $next): Response
     {
@@ -53,9 +58,10 @@ class ApiClientAuthenticate
             return $this->deny('IP_NOT_ALLOWED', "IP {$request->ip()} tidak diizinkan.", $request);
         }
 
-        // Timestamp freshness
-        if (abs(time() - (int) $timestamp) > self::TOLERANCE) {
-            return $this->deny('TIMESTAMP_EXPIRED', 'Timestamp kadaluarsa (toleransi ±300s).', $request);
+        // Timestamp freshness (toleransi dari config)
+        $tolerance = $this->tolerance();
+        if (abs(time() - (int) $timestamp) > $tolerance) {
+            return $this->deny('TIMESTAMP_EXPIRED', "Timestamp kadaluarsa (toleransi ±{$tolerance}s).", $request);
         }
 
         // Nonce replay check — reservasi ATOMIC (#4). Cache::add() = insert-if-absent
@@ -63,7 +69,7 @@ class ApiClientAuthenticate
         // has()+put() terpisah (TOCTOU): dua request dengan nonce sama yang tiba
         // bersamaan bisa lolos keduanya pada driver database. Disimpan 2× TOLERANCE.
         $nonceCacheKey = 'hmac_nonce:' . $clientKey . ':' . $nonce;
-        if (! Cache::add($nonceCacheKey, 1, self::TOLERANCE * 2)) {
+        if (! Cache::add($nonceCacheKey, 1, $tolerance * 2)) {
             return $this->deny('REPLAY_DETECTED', 'Nonce sudah digunakan (replay attack terdeteksi).', $request);
         }
 
