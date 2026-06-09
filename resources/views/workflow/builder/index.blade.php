@@ -732,7 +732,7 @@ const NC = {
     DECISION: { bg:'var(--n-dec-bg)',   bd:'var(--n-dec-bd)',   tx:'var(--n-dec-tx)',   ic:'◆' },
     END:      { bg:'var(--n-end-bg)',   bd:'var(--n-end-bd)',   tx:'var(--n-end-tx)',   ic:'■' },
 };
-const ASSIGNEE_TYPES = ['USER','ROLE','GROUP','POSITION','SUPERIOR','FIELD_USER','FIELD_POSITION','JOBTITLE','API_RESOLVER'];
+const ASSIGNEE_TYPES = ['USER','ROLE','GROUP','POSITION','SUPERIOR','ORG_HEAD','FIELD_USER','FIELD_POSITION','JOBTITLE','API_RESOLVER'];
 
 // ============================================================
 // GLOBAL STATE
@@ -1340,6 +1340,7 @@ const ASSIGNEE_HINTS = {
     'GROUP':          'group_code dari Master → Approval Group',
     'POSITION':       'position_code dari Master → Position',
     'SUPERIOR':       '(kosong) — otomatis ke atasan submitter',
+    'ORG_HEAD':       'tier atasan pemohon: dept_head | div_head | atasan',
     'FIELD_USER':     'nama field di context_json. Contoh: _computed.bmh_user_ref',
     'FIELD_POSITION': 'nama field di context_json.',
     'JOBTITLE':       'cari nama jabatan di bawah',

@@ -38,7 +38,7 @@ $sc = ['SUBMITTED'=>'secondary','IN_PROGRESS'=>'primary','APPROVED'=>'success',
                     </dd>
                     <dt class="col-5">Flow</dt><dd class="col-7">{{ optional(optional(optional($req->processInstance)->flowVersion)->flowDefinition)->flow_name ?? '—' }}</dd>
                     <dt class="col-5">Version</dt><dd class="col-7">v{{ optional(optional($req->processInstance)->flowVersion)->version_no ?? '—' }}</dd>
-                    <dt class="col-5">Step Kini</dt><dd class="col-7">{{ optional(optional($req->processInstance)->flowStepCurrent)->step_name ?? '—' }}</dd>
+                    <dt class="col-5">Step Kini</dt><dd class="col-7">@nodeLabel(optional(optional($req->processInstance)->flowStepCurrent)->step_name)</dd>
                     <dt class="col-5">Dibuat</dt><dd class="col-7">{{ $req->created_at?->format('d M Y H:i') }}</dd>
                     <dt class="col-5">Diperbarui</dt><dd class="col-7">{{ $req->updated_at?->format('d M Y H:i') }}</dd>
                 </dl>
@@ -59,8 +59,11 @@ $sc = ['SUBMITTED'=>'secondary','IN_PROGRESS'=>'primary','APPROVED'=>'success',
                                           'EXPIRED'=>'dark','SKIPPED'=>'secondary'][$t->task_status] ?? 'info';
                         @endphp
                         <tr>
-                            <td>{{ optional($t->flowStep)->step_name }}</td>
-                            <td><code class="small">{{ optional($t->completedBy)->user_ref ?? optional($t->claimedBy)->user_ref ?? optional($t->assignedTo)->user_ref ?? '—' }}</code></td>
+                            <td>@nodeLabel(optional($t->flowStep)->step_name)</td>
+                            <td>
+                                @php $picUser = $t->completedBy ?? $t->claimedBy ?? $t->assignedUser ?? optional(optional($t->candidates)->first())->user; @endphp
+                                @if($picUser){{ $picUser->full_name ? $picUser->full_name.' - '.$picUser->user_ref : $picUser->user_ref }}@else<span class="text-muted">—</span>@endif
+                            </td>
                             <td>
                                 <span class="badge bg-{{ $taskBadge }}">
                                     {{ $t->task_status }}
@@ -81,10 +84,11 @@ $sc = ['SUBMITTED'=>'secondary','IN_PROGRESS'=>'primary','APPROVED'=>'success',
         @php $ctxArr = is_array($req->context_json) ? $req->context_json : json_decode($req->context_json ?? '{}', true); @endphp
         @php $payArr = is_array($req->payload_json) ? $req->payload_json : json_decode($req->payload_json ?? '{}', true); @endphp
         @include('partials._context_renderer', [
-            'payloadJson' => $payArr,
-            'contextJson' => $ctxArr,
-            'formSchema'  => optional($req->documentType)->form_schema ?? [],
-            'docTypeName' => optional($req->documentType)->doc_name,
+            'payloadJson'   => $payArr,
+            'contextJson'   => $ctxArr,
+            'formSchema'    => optional($req->documentType)->form_schema ?? [],
+            'docTypeName'   => optional($req->documentType)->doc_name,
+            'sourceBaseUrl' => optional($req->sourceApp)->base_url,
         ])
 
         {{-- Action Log (keputusan) --}}
@@ -103,7 +107,7 @@ $sc = ['SUBMITTED'=>'secondary','IN_PROGRESS'=>'primary','APPROVED'=>'success',
                         @endphp
                         <tr>
                             <td class="text-nowrap text-muted">{{ $al->created_at?->format('d/m H:i') }}</td>
-                            <td><code>{{ $al->actor_ref }}</code></td>
+                            <td>{{ $al->actor_name ? $al->actor_name.' - '.$al->actor_ref : $al->actor_ref }}</td>
                             <td><span class="badge bg-{{ $alBadge }}">{{ $al->action_code }}</span></td>
                             <td class="text-muted">{{ Str::limit($al->action_note, 60) }}</td>
                         </tr>
@@ -120,7 +124,7 @@ $sc = ['SUBMITTED'=>'secondary','IN_PROGRESS'=>'primary','APPROVED'=>'success',
                 <button class="btn btn-xs btn-outline-secondary btn-sm float-end"
                         data-bs-toggle="collapse" data-bs-target="#routeLog">Toggle</button>
             </div>
-            <div class="collapse show" id="routeLog">
+            <div class="collapse" id="routeLog">
                 <div class="card-body p-0" style="max-height:400px;overflow-y:auto">
                     <table class="table table-sm mb-0 small">
                         <thead class="table-light sticky-top"><tr><th>Waktu</th><th>Event</th><th>Node</th><th>Pesan</th></tr></thead>
@@ -129,7 +133,7 @@ $sc = ['SUBMITTED'=>'secondary','IN_PROGRESS'=>'primary','APPROVED'=>'success',
                             <tr>
                                 <td class="text-nowrap text-muted">{{ $log->created_at?->format('d/m H:i:s') }}</td>
                                 <td><code class="small">{{ $log->route_event }}</code></td>
-                                <td>{{ optional($log->flowStep)->node_code ?? '—' }}</td>
+                                <td>@nodeLabel(optional($log->flowStep)->node_code)</td>
                                 <td class="text-muted">{{ $log->message }}</td>
                             </tr>
                         @empty <tr><td colspan="4" class="text-muted text-center py-3">Belum ada route log.</td></tr> @endforelse

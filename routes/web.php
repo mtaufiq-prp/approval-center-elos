@@ -14,6 +14,12 @@ use Illuminate\Support\Facades\Route;
 */
 
 // ============================================================
+// PUBLIK (read-only, token HMAC) — tracking dari source app tanpa login
+// ============================================================
+Route::get('/track/{id}', [\App\Http\Controllers\Web\TrackController::class, 'show'])
+    ->whereNumber('id')->name('track.show');
+
+// ============================================================
 // GUEST
 // ============================================================
 Route::middleware('guest')->group(function () {

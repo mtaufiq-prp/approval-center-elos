@@ -13,6 +13,8 @@
     $ctx        = $contextJson ?? [];
     $schema     = $formSchema  ?? [];
     $hasSchema  = !empty($schema);
+    // base_url master source app (input admin di hub) → utk menyusun link relatif (mis. lampiran)
+    $baseUrl    = $sourceBaseUrl ?? '';
 
     /**
      * Resolve nilai dari nested path seperti "header.customer_name"
@@ -147,9 +149,19 @@
                                 </tbody>
                                 @if(count($tableData) > 0)
                                 @php
-                                    $numCols = array_filter($columns, fn($c) =>
-                                        isset($tableData[0][$c]) && is_numeric($tableData[0][$c])
-                                    );
+                                    // Hanya total kolom kuantitas/nilai — JANGAN total identifier (kode_barang dll).
+                                    // Schema boleh override eksplisit via "total_columns": [...].
+                                    $explicitTotals = $fd['total_columns'] ?? null;
+                                    if (is_array($explicitTotals)) {
+                                        $numCols = array_values(array_intersect($columns, $explicitTotals));
+                                    } else {
+                                        // Kuantitas (qty) TIDAK ditotal — unit bisa beda antar item. Hanya kolom nilai uang.
+                                        $sumable = ['total','nilai','harga','value','amount','subtotal'];
+                                        $numCols = array_values(array_filter($columns, fn($c) =>
+                                            isset($tableData[0][$c]) && is_numeric($tableData[0][$c])
+                                            && \Illuminate\Support\Str::contains(strtolower($c), $sumable)
+                                        ));
+                                    }
                                 @endphp
                                 @if(count($numCols) > 0)
                                 <tfoot class="table-light fw-semibold">
@@ -196,6 +208,25 @@
                             <div class="d-flex flex-wrap gap-1">
                                 @foreach($rawVal as $item)
                                     <span class="badge bg-light text-dark border">{{ $item }}</span>
+                                @endforeach
+                            </div>
+                        @elseif($type === 'links' && is_array($rawVal))
+                            <div class="d-flex flex-wrap gap-2">
+                                @foreach($rawVal as $item)
+                                    @php
+                                        if (is_array($item)) {
+                                            $lnama = $item['nama'] ?? $item['path'] ?? $item['url'] ?? 'file';
+                                            if (!empty($item['url'])) {
+                                                $lurl = $item['url'];                    // absolut: apa adanya
+                                            } elseif (!empty($item['path'])) {
+                                                // relatif: gabung dgn base_url master source app
+                                                $lurl = rtrim($baseUrl, '/').'/'.ltrim($item['path'], '/');
+                                            } else { $lurl = '#'; }
+                                        } else { $lnama = (string)$item; $lurl = (string)$item; }
+                                    @endphp
+                                    <a href="{{ $lurl }}" target="_blank" class="badge bg-primary text-decoration-none">
+                                        <i class="bi bi-paperclip"></i> {{ $lnama }}
+                                    </a>
                                 @endforeach
                             </div>
                         @else

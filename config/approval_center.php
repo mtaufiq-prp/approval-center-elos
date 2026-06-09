@@ -121,6 +121,21 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Org Resolver (assignee_type = ORG_HEAD)
+    |--------------------------------------------------------------------------
+    | Lokasi NPK pemohon di context_json untuk menelusuri hierarki organisasi
+    | (db_master.tbemployeeit). Dicoba berurutan; yang pertama non-kosong dipakai.
+    | NPK pemohon adalah FAKTA dokumen dari source app — bukan approver.
+    */
+    'org_resolver' => [
+        'requester_npk_fields' => array_filter(array_map('trim', explode(',', env(
+            'APPROVAL_ORG_REQUESTER_NPK_FIELDS',
+            'header.npk_pembuat,header.0.npk_pembuat,npk_pembuat,header.create_by,header.0.create_by'
+        )))),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Notification
     |--------------------------------------------------------------------------
     */

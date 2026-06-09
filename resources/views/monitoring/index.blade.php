@@ -77,7 +77,7 @@
                         <td>{{ $req->requester_name }}</td>
                         <td><span class="badge bg-{{ match($req->priority){'URGENT'=>'danger','HIGH'=>'warning','LOW'=>'secondary',default=>'info'} }}">{{ $req->priority }}</span></td>
                         <td><span class="badge bg-{{ $sc[$req->request_status] ?? 'secondary' }}">{{ $req->request_status }}</span></td>
-                        <td class="text-muted">{{ optional(optional($req->processInstance)->flowStepCurrent)->step_name ?? '—' }}</td>
+                        <td class="text-muted">@nodeLabel(optional(optional($req->processInstance)->flowStepCurrent)->step_name)</td>
                         <td class="text-muted text-nowrap">{{ $req->created_at?->format('d/m/y H:i') }}</td>
                         <td>
                             <a href="{{ route('monitoring.show', $req->idtblapproval_request) }}"

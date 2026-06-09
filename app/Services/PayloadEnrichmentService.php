@@ -55,12 +55,36 @@ class PayloadEnrichmentService
      */
     public function enrich(array $contextJson, array $payloadJson, string $sourceAppCode = ''): array
     {
-        // Hanya enrich untuk source app SFA
-        // Bisa diperluas untuk source app lain dengan logic berbeda
-        if (strtoupper($sourceAppCode) !== 'SFA') {
-            return $contextJson;
+        // Keamanan/otoritas-hub: _computed adalah MILIK Approval Center, bukan source app.
+        // Selalu buang _computed yang mungkin dikirim payload agar app TIDAK bisa
+        // menentukan approver/nilai sendiri (mis. menyuntik dept_head palsu). Hub yang
+        // menghitung ulang dari fakta dokumen.
+        unset($contextJson['_computed']);
+
+        // Per-source-app logic. Tiap app punya cara resolve approver berbeda, tapi
+        // SELALU dihitung di sini (hub), bukan diambil dari payload.
+        //
+        // Catatan: PSTB TIDAK butuh enrichment _computed. Approver-nya di-resolve
+        // saat runtime oleh assignee_type ORG_HEAD (dept_head/div_head via hierarki
+        // db_master.tbemployeeit) + GROUP (direksi), dan nilai dikirim app sebagai
+        // fakta (header.gtotal). Jadi tak ada field turunan yang perlu dihitung.
+        $computed = match (strtoupper($sourceAppCode)) {
+            'SFA'  => $this->enrichSfa($payloadJson),
+            default => [],
+        };
+
+        if (! empty($computed)) {
+            $contextJson['_computed'] = $computed;
         }
 
+        return $contextJson;
+    }
+
+    /**
+     * Enrichment SFA — routing retur berdasarkan nilai, alasan, branch, dan product group.
+     */
+    private function enrichSfa(array $payloadJson): array
+    {
         $computed = [];
 
         try {
@@ -105,15 +129,10 @@ class PayloadEnrichmentService
             $computed['pkg_user_ref'] = $this->pkgRef;
 
         } catch (\Throwable $e) {
-            Log::warning("PayloadEnrichmentService: partial enrichment error: {$e->getMessage()}");
+            Log::warning("PayloadEnrichmentService[SFA]: partial enrichment error: {$e->getMessage()}");
         }
 
-        // Inject ke context_json
-        if (! empty($computed)) {
-            $contextJson['_computed'] = $computed;
-        }
-
-        return $contextJson;
+        return $computed;
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────

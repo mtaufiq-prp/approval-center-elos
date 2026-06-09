@@ -440,7 +440,7 @@ class FlowEngineService
             // agar payload akurat. Dikirim tiap node dimasuki (re-entry/RETURN → kirim lagi).
             $this->maybeEnqueueNodeCallback($node, $request);
 
-            $this->createApprovalTask($node, $instance, $request);
+            $this->createApprovalTask($node, $instance, $request, $token);
             return;
         }
 
@@ -621,7 +621,8 @@ class FlowEngineService
     private function createApprovalTask(
         TblFlowStep $node,
         TblProcessInstance $instance,
-        TblApprovalRequest $request
+        TblApprovalRequest $request,
+        ?TblProcessToken $token = null
     ): void {
         $context    = $request->context_json ?? [];
         $submitter  = $request->idtbluser_submitter ?? null;
@@ -637,6 +638,53 @@ class FlowEngineService
             $this->completeProcess($instance, $request, 'ERROR',
                 "Tidak ada approver untuk node '{$node->node_code}' (rules: {$ruleTypes}). Periksa assignee rule / data approver.");
             return;
+        }
+
+        // ── Auto-skip (CONSECUTIVE-only): skip HANYA bila approver di step approval
+        // TEPAT SEBELUMNYA sama dengan (salah satu) kandidat node ini — mis. orang yang
+        // sama menjadi dept_head & div_head berurutan. Bila ada approver lain menyela
+        // (A > B > A), A TETAP approve lagi (situasi berubah → review ulang).
+        // Node DECISION/SYSTEM di antara tidak membuat task, jadi "approver tepat sebelumnya"
+        // = pemilik task APPROVED paling akhir. Edge maju ber-action 'APPROVE' → traverse
+        // pakai 'APPROVE' agar match; audit dicatat sebagai AUTO_APPROVE.
+        $lastApproverId = (int) (TblTask::where('idtblapproval_request', $request->idtblapproval_request)
+            ->where('task_status', 'APPROVED')
+            ->whereNotNull('idtbluser_completed_by')
+            ->orderByDesc('completed_at')->orderByDesc('idtbltask')
+            ->value('idtbluser_completed_by') ?? 0);
+        if ($lastApproverId > 0) {
+            $candIds = $candidates->pluck('idtbluser')->map(fn ($v) => (int) $v);
+            $isAll   = strtoupper((string) $node->approval_mode) === 'ALL';
+            // ALL: hanya skip bila approver sebelumnya adalah SATU-SATUNYA kandidat node ini.
+            $skip    = $isAll
+                ? ($candIds->count() === 1 && $candIds->first() === $lastApproverId)
+                : $candIds->contains($lastApproverId);
+            if ($skip) {
+                $autoUserId = $lastApproverId;
+                $autoUser   = \App\Models\TblUser::find($autoUserId);
+                TblActionLog::create([
+                    'idtblapproval_request' => $request->idtblapproval_request,
+                    'idtblprocess_instance' => $instance->idtblprocess_instance,
+                    'task_id'               => null,
+                    'idtbluser_actor'       => $autoUserId,
+                    'actor_ref'             => $autoUser?->user_ref,
+                    'action_code'           => 'AUTO_APPROVE',
+                    'action_note'           => 'Auto-approve: ' . ($autoUser?->full_name ?? $autoUser?->user_ref)
+                                                . ' sudah menyetujui di step sebelumnya.',
+                    'before_status'         => null,
+                    'after_status'          => 'APPROVED',
+                    'idtblflow_step_before'  => $node->idtblflow_step,
+                    'client_ip'             => request()?->ip(),
+                    'user_agent'            => substr((string) request()?->userAgent(), 0, 255),
+                ]);
+                $this->logRoute($request->idtblapproval_request, $instance->idtblprocess_instance,
+                    $node->idtblflow_step, null,
+                    TblProcessRouteLog::EV_EXIT_NODE, 'APPROVAL', 'AUTO_APPROVE', null,
+                    "Auto-approve node '{$node->node_code}': approver "
+                        . ($autoUser?->user_ref ?? $autoUserId) . ' sudah approve di step sebelumnya.');
+                $this->traverseFromNode($node, $instance, $request, $token, 'APPROVE');
+                return;
+            }
         }
 
         // Buat satu task per kandidat (task_no WAJIB di-generate; kolom NOT NULL)

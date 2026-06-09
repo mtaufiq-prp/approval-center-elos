@@ -97,6 +97,41 @@ class FlowBuilderSaveService
                 }
 
                 // -------------------------------------------------------
+                // PASS 2b — Reconcile ke payload SEBELUM upsert (desired state penuh)
+                // Builder mengirim SELURUH canvas, tetapi deleted_node_ids/
+                // deleted_edge_ids sering kosong ([]). Akibatnya:
+                //   (a) penghapusan di canvas tak persist → "balik lagi" saat reload;
+                //   (b) orphan lama bentrok transition_code dgn edge yang digambar
+                //       ulang (uq_version_code → 1062) saat INSERT di PASS 4.
+                // Solusi: hapus baris DB versi ini yang TIDAK direferensikan payload
+                // SEBELUM upsert — orphan bersih dulu, baru insert/update (anti-1062).
+                // keep = id yang DIKIRIM payload; node/edge baru (id null) belum ada
+                // di DB → tak terpengaruh. Urutan: edge dulu (FK), lalu rule + step.
+                // Guard !empty($nodes) cegah payload kosong menghapus seluruh flow.
+                // -------------------------------------------------------
+                if (! empty($nodes)) {
+                    $keepStepIds = array_values(array_filter(array_map(
+                        fn ($n) => $n['idtblflow_step'] ?? null, $nodes
+                    )));
+                    $keepEdgeIds = array_values(array_filter(array_map(
+                        fn ($e) => $e['idtblflow_transition'] ?? null, $edges
+                    )));
+
+                    TblFlowTransition::where('idtblflow_version', $version->idtblflow_version)
+                        ->when(! empty($keepEdgeIds), fn ($q) => $q->whereNotIn('idtblflow_transition', $keepEdgeIds))
+                        ->delete();
+
+                    $staleStepIds = TblFlowStep::where('idtblflow_version', $version->idtblflow_version)
+                        ->when(! empty($keepStepIds), fn ($q) => $q->whereNotIn('idtblflow_step', $keepStepIds))
+                        ->pluck('idtblflow_step');
+
+                    if ($staleStepIds->isNotEmpty()) {
+                        TblStepAssigneeRule::whereIn('idtblflow_step', $staleStepIds)->delete();
+                        TblFlowStep::whereIn('idtblflow_step', $staleStepIds)->delete();
+                    }
+                }
+
+                // -------------------------------------------------------
                 // PASS 3 — Upsert nodes
                 // Map frontend_id → idtblflow_step untuk dipakai pass 4
                 // -------------------------------------------------------

@@ -2,7 +2,9 @@
 
 namespace App\Jobs;
 
+use App\Models\TblApiClient;
 use App\Models\TblCallbackOutbox;
+use App\Services\ApiClientSecretService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -64,7 +66,7 @@ class SendCallbackJob implements ShouldQueue, ShouldBeUnique
             $timestamp = (string) time();
             $nonce     = bin2hex(random_bytes(8));
             $bodyJson  = json_encode($cb->payload_json ?? [], JSON_UNESCAPED_UNICODE);
-            $secret    = config('app.callback_hmac_secret') ?: config('app.key');
+            $secret    = $this->resolveSigningSecret($cb);
             $signature = hash_hmac('sha256', $timestamp . "\n" . $nonce . "\n" . $bodyJson, $secret);
 
             // #M1: kirim BYTE-IDENTIK dengan yang ditandatangani. Sebelumnya body
@@ -97,6 +99,51 @@ class SendCallbackJob implements ShouldQueue, ShouldBeUnique
 
         } catch (\Throwable $e) {
             $this->scheduleRetryOrDead($cb, $e->getMessage());
+        }
+    }
+
+    /**
+     * Secret untuk menandatangani callback (Opsi B — per-client).
+     *
+     * Callback ditandatangani dengan client_secret milik API Client aktif dari
+     * source app penerima. Dengan begitu penerima cukup memverifikasi callback
+     * memakai secret YANG SAMA yang ia gunakan untuk memanggil API masuk — tidak
+     * perlu lagi membagikan APP_KEY hub (yang merupakan kunci enkripsi master
+     * Laravel dan tidak boleh keluar dari hub).
+     *
+     * Fallback: bila source app belum punya API Client aktif (integrasi lama,
+     * atau callback non-client), pakai secret global lama
+     * (CALLBACK_HMAC_SECRET ?: APP_KEY) agar kompatibilitas mundur terjaga.
+     *
+     * Catatan: bila satu source app punya >1 client aktif dengan secret berbeda,
+     * dipilih yang terakhir dipakai. Untuk satu-client-per-app (kasus umum) ini
+     * deterministik. Decrypt memakai hash ciphertext terkini, jadi rotasi secret
+     * otomatis ikut tercermin tanpa perubahan konfigurasi.
+     */
+    private function resolveSigningSecret(TblCallbackOutbox $cb): string
+    {
+        $globalSecret = config('app.callback_hmac_secret') ?: config('app.key');
+
+        if (! $cb->idtblsource_app) {
+            return $globalSecret;
+        }
+
+        $client = TblApiClient::where('idtblsource_app', $cb->idtblsource_app)
+            ->where('is_active', true)
+            ->orderByDesc('last_used_at')
+            ->orderByDesc('idtblapi_client')
+            ->first();
+
+        if (! $client || ! $client->client_secret_hash) {
+            Log::info("SendCallback #{$this->callbackId}: tidak ada API Client aktif untuk source_app {$cb->idtblsource_app}; pakai secret global.");
+            return $globalSecret;
+        }
+
+        try {
+            return app(ApiClientSecretService::class)->decrypt($client->client_secret_hash);
+        } catch (\Throwable $e) {
+            Log::warning("SendCallback #{$this->callbackId}: gagal decrypt secret client {$client->client_key}; pakai secret global: {$e->getMessage()}");
+            return $globalSecret;
         }
     }
 

@@ -87,6 +87,32 @@ class TblActionLog extends Model
         return $this->belongsTo(TblUser::class, 'idtbluser_actor', 'idtbluser');
     }
 
+    /**
+     * Nama aktor untuk tampilan. Approver internal ada di tbluser (lewat relasi);
+     * aktor eksternal (mis. pemohon dari source app) tidak di-seed ke tbluser →
+     * fallback resolve dari db_master.tbemployeeit by NPK. Cache statis per-NPK
+     * agar tidak N+1 saat satu halaman menampilkan banyak baris log.
+     */
+    public function getActorNameAttribute(): ?string
+    {
+        if ($this->actor) {
+            return $this->actor->full_name;
+        }
+        if (empty($this->actor_ref)) {
+            return null;
+        }
+        static $cache = [];
+        $ref = $this->actor_ref;
+        if (!array_key_exists($ref, $cache)) {
+            $row = \Illuminate\Support\Facades\DB::selectOne(
+                'SELECT employeename FROM db_master.tbemployeeit WHERE employeeno = ? LIMIT 1',
+                [$ref]
+            );
+            $cache[$ref] = $row->employeename ?? null;
+        }
+        return $cache[$ref];
+    }
+
     public function stepBefore(): BelongsTo
     {
         return $this->belongsTo(TblFlowStep::class, 'idtblflow_step_before', 'idtblflow_step');

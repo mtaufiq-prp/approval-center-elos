@@ -114,35 +114,34 @@ const MERMAID_DEF = `flowchart TD
     $nodes = $version->steps->sortBy('step_order');
     $edges = $version->transitions->where('is_active', true)->sortBy('priority_no');
 
+    // Prefix semua node ID dengan "nd_" agar tidak bentrok dengan reserved keyword
+    // Mermaid seperti "end", "start", "graph", "subgraph".
+    $mId = fn($code) => 'nd_' . ($code ?? 'N');
+
     foreach ($nodes as $n):
-        $code  = $n->node_code ?? 'N'.$n->idtblflow_step;
+        $id    = $mId($n->node_code ?? 'N'.$n->idtblflow_step);
         $label = addslashes($n->step_name);
         $type  = $n->step_type;
-        if ($type === 'START'):
-            echo "    {$code}(({$label}))\n";
-        elseif ($type === 'END'):
-            echo "    {$code}(({$label}))\n";
+        if ($type === 'START' || $type === 'END'):
+            echo "    {$id}(({$label}))\n";
         elseif ($type === 'DECISION'):
-            echo "    {$code}{{{$label}}}\n";
+            echo "    {$id}{{{$label}}}\n";
         else:
-            echo "    {$code}[{$label}]\n";
+            echo "    {$id}[{$label}]\n";
         endif;
     endforeach;
 
     foreach ($edges as $e):
-        $fromCode = optional($e->stepFrom)->node_code ?? 'N'.$e->idtblflow_step_from;
-        $toCode   = $e->idtblflow_step_to ? (optional($e->stepTo)->node_code ?? 'N'.$e->idtblflow_step_to) : 'END';
-        $action   = addslashes($e->action_code ?? '');
-        $cond     = '';
-        if ($e->condition_json):
-            $cond = ' [cond]';
-        endif;
-        echo "    {$fromCode} -->|{$action}{$cond}| {$toCode}\n";
+        $from   = $mId(optional($e->stepFrom)->node_code ?? 'N'.$e->idtblflow_step_from);
+        $to     = $mId($e->idtblflow_step_to ? (optional($e->stepTo)->node_code ?? 'N'.$e->idtblflow_step_to) : 'END');
+        $action = addslashes($e->action_code ?? '');
+        $cond   = $e->condition_json ? ' *' : '';
+        echo "    {$from} -->|{$action}{$cond}| {$to}\n";
     endforeach;
 
     // Color styling per node type
     foreach ($nodes as $n):
-        $code = $n->node_code ?? 'N'.$n->idtblflow_step;
+        $id    = $mId($n->node_code ?? 'N'.$n->idtblflow_step);
         $color = match($n->step_type){
             'START'    => 'fill:#198754,color:#fff',
             'END'      => 'fill:#dc3545,color:#fff',
@@ -150,7 +149,7 @@ const MERMAID_DEF = `flowchart TD
             'APPROVAL' => 'fill:#0d6efd,color:#fff',
             default    => 'fill:#6c757d,color:#fff',
         };
-        echo "    style {$code} {$color}\n";
+        echo "    style {$id} {$color}\n";
     endforeach;
 @endphp`;
 

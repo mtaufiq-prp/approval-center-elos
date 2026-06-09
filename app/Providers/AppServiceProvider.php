@@ -5,6 +5,7 @@ namespace App\Providers;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\Paginator;
+use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 
@@ -26,6 +27,13 @@ class AppServiceProvider extends ServiceProvider
         Paginator::useBootstrapFive();
 
         $this->configureRateLimiters();
+
+        // @nodeLabel($x): format nama node/step untuk layar approval & monitoring
+        // (mis. "dept_head" → "DEPT HEAD"). Hilangkan underscore + ALL CAPS agar
+        // lebih mudah dibaca. Tidak dipakai di halaman setting/builder (pakai node_code asli).
+        Blade::directive('nodeLabel', function ($expr) {
+            return "<?php \$__nl = strtoupper(str_replace('_', ' ', trim((string) ({$expr})))); echo e(\$__nl !== '' ? \$__nl : '—'); ?>";
+        });
     }
 
     /**

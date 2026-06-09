@@ -60,7 +60,7 @@
                         <td><code>{{ optional($task->approvalRequest)->source_request_no ?? '-' }}</code></td>
                         <td>{{ Str::limit(optional($task->approvalRequest)->title, 45) }}</td>
                         <td>{{ optional(optional($task->approvalRequest)->sourceApp)->app_code }}</td>
-                        <td>{{ optional($task->flowStep)->step_name }}</td>
+                        <td>@nodeLabel(optional($task->flowStep)->step_name)</td>
                         <td>
                             @php $p = optional($task->approvalRequest)->priority; @endphp
                             <span class="badge bg-{{ match($p) { 'URGENT'=>'danger','HIGH'=>'warning','LOW'=>'secondary', default=>'info' } }}">

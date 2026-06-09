@@ -95,7 +95,7 @@
                         <td><code>{{ optional($task->approvalRequest)->source_request_no ?? '-' }}</code></td>
                         <td>{{ \Illuminate\Support\Str::limit(optional($task->approvalRequest)->title, 40) }}</td>
                         <td>{{ optional(optional($task->approvalRequest)->sourceApp)->app_code }}</td>
-                        <td>{{ optional($task->flowStep)->step_name }}</td>
+                        <td>@nodeLabel(optional($task->flowStep)->step_name)</td>
                         <td>
                             <span class="badge bg-{{ $color }}">
                                 <i class="bi bi-{{ $icon }}"></i> {{ $label }}
@@ -114,7 +114,7 @@
                             <span class="badge bg-{{ $reqColor }}">{{ $reqStatus ?? '—' }}</span>
                             @if($curStep && !in_array($reqStatus, ['APPROVED','REJECTED','CANCELLED']))
                                 <div class="small text-muted mt-1">
-                                    <i class="bi bi-geo-alt"></i> {{ $curStep }}
+                                    <i class="bi bi-geo-alt"></i> @nodeLabel($curStep)
                                 </div>
                             @endif
                         </td>
