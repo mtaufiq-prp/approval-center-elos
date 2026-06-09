@@ -8,6 +8,7 @@
 /storage/framework/sessions/*
 /storage/framework/testing/*
 /storage/framework/views/*.php
+/bootstrap/cache/*.php
 /vendor
 .env
 .env.backup
