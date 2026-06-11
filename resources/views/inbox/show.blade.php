@@ -79,6 +79,7 @@
     'formSchema'    => optional($req->documentType)->form_schema ?? [],
     'docTypeName'   => optional($req->documentType)->doc_name,
     'sourceBaseUrl' => optional($req->sourceApp)->base_url,
+    'showRawJson'   => false,
 ])
 
 {{-- ===== 2. Keputusan (Step) ===== --}}

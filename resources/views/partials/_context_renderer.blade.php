@@ -51,7 +51,7 @@
                 <span class="badge bg-primary ms-1">{{ $docTypeName }}</span>
             @endif
         </span>
-        @if($hasSchema)
+        @if($hasSchema && ($showRawJson ?? true))
         <div class="btn-group btn-group-sm">
             <button type="button" class="btn btn-outline-primary active" id="btn-vf" onclick="switchView('form')">
                 <i class="bi bi-layout-text-window"></i> Form
