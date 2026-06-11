@@ -60,6 +60,11 @@ return [
         // dinaikkan ke 1000 dan worker queue diparalelkan (lihat DEPLOYMENT_GUIDE).
         'batch_size'             => (int) env('APPROVAL_CALLBACK_BATCH_SIZE', 1000),
 
+        // Instant dispatch: kirim SendCallbackJob seketika SETELAH commit (tak nunggu
+        // cron 1 menit). Outbox TETAP dicatat (log + retry safety-net lewat cron).
+        // Set false saat traffic tinggi → pengiriman murni batch via cron/worker.
+        'dispatch_immediately'   => (bool) env('APPROVAL_CALLBACK_IMMEDIATE', true),
+
         /*
         | SSRF allowlist (review #8/#109/#11).
         |

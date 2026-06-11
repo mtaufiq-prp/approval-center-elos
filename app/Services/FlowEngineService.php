@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Jobs\SendCallbackJob;
 use App\Models\TblActionLog;
 use App\Models\TblApprovalRequest;
 use App\Models\TblCallbackOutbox;
@@ -475,7 +476,7 @@ class FlowEngineService
         // Bila insert gagal, transaksi submit/keputusan ikut rollback (fail-safe), bukan
         // kehilangan callback secara diam-diam.
         $eventCode = $cfg['callback_event_code'] ?? $node->node_code;
-        TblCallbackOutbox::create([
+        $outbox = TblCallbackOutbox::create([
             'idtblapproval_request' => $request->idtblapproval_request,
             'idtblsource_app'       => $request->idtblsource_app,
             'event_type'            => 'TASK_CREATED', // ENUM-valid; penanda event per-step (lihat event_code)
@@ -496,6 +497,8 @@ class FlowEngineService
             'retry_count'   => 0,
             'next_retry_at' => now(),
         ]);
+
+        $this->maybeDispatchNow($outbox);
     }
 
     private function executeDecisionNode(
@@ -835,7 +838,7 @@ class FlowEngineService
             return; // source app tidak meminta callback
         }
 
-        TblCallbackOutbox::create([
+        $outbox = TblCallbackOutbox::create([
             'idtblapproval_request' => $request->idtblapproval_request,
             'idtblsource_app'       => $request->idtblsource_app,
             'event_type'            => $this->callbackEventType($request->request_status),
@@ -855,6 +858,22 @@ class FlowEngineService
             'retry_count' => 0,
             'next_retry_at' => now(),
         ]);
+
+        $this->maybeDispatchNow($outbox);
+    }
+
+    /**
+     * Instant-mode (config callback.dispatch_immediately): kirim callback seketika
+     * SETELAH transaksi commit, tanpa menunggu cron 1 menit. Outbox tetap tercatat
+     * sebagai log + safety-net retry (cron tetap mengambil baris PENDING/FAILED).
+     * afterCommit() menjamin baris sudah ter-commit & keputusan final sebelum HTTP
+     * dikirim; SendCallbackJob ShouldBeUnique → tak akan dobel dengan dispatch cron.
+     */
+    private function maybeDispatchNow(TblCallbackOutbox $outbox): void
+    {
+        if (config('approval_center.callback.dispatch_immediately', true)) {
+            SendCallbackJob::dispatch($outbox->idtblcallback_outbox)->afterCommit();
+        }
     }
 
     private function findStartStep(TblFlowVersion $version): ?TblFlowStep
