@@ -48,13 +48,16 @@
     .aproute-time{font-size:.7rem;color:#9aa0a6;margin-top:.15rem}
     .aproute-note{font-size:.72rem;color:#6c757d;font-style:italic;margin-top:.25rem;max-width:148px}
 
-    /* ===== Pilihan Keputusan (radio sebagai tombol, proporsional) ===== */
-    .decision-grid{display:flex;gap:.5rem;flex-wrap:wrap}
-    .decision-grid .btn-check+.btn{display:inline-flex;align-items:center;gap:.4rem;
-        padding:.5rem 1.25rem;border-width:1.5px;border-radius:.5rem;font-weight:600;transition:.15s}
-    .decision-grid .btn-check+.btn .bi{font-size:1.05rem;line-height:1}
-    .decision-grid .btn-check:focus-visible+.btn{box-shadow:0 0 0 .2rem rgba(13,110,253,.25)}
-    .decision-grid .btn-check:checked+.btn{box-shadow:0 2px 7px rgba(0,0,0,.13)}
+    /* ===== Pilihan Keputusan (segmented, proporsional) ===== */
+    .decision-grid{display:grid;grid-template-columns:1fr 1fr;gap:.75rem}
+    .decision-opt{display:flex;align-items:center;justify-content:center;gap:.5rem;margin:0;
+        padding:.8rem 1rem;border:1.5px solid #dee2e6;border-radius:.6rem;background:#fff;
+        font-weight:600;color:#6c757d;cursor:pointer;transition:.15s;user-select:none}
+    .decision-opt .bi{font-size:1.2rem;line-height:1}
+    .decision-opt:hover{border-color:#adb5bd;background:#f8f9fa}
+    .btn-check:focus-visible+.decision-opt{box-shadow:0 0 0 .2rem rgba(13,110,253,.25)}
+    .btn-check:checked+.decision-opt.opt-approve{border-color:#198754;background:#198754;color:#fff;box-shadow:0 3px 10px rgba(25,135,84,.25)}
+    .btn-check:checked+.decision-opt.opt-reject{border-color:#dc3545;background:#dc3545;color:#fff;box-shadow:0 3px 10px rgba(220,53,69,.25)}
 </style>
 
 {{-- ===== Header ===== --}}
@@ -145,18 +148,17 @@
                 </div>
                 @endif
 
-                {{-- 1. Keputusan (kartu radio) --}}
+                {{-- 1. Keputusan --}}
                 <div class="mb-3">
-                    <label class="form-label fw-semibold">Keputusan <span class="text-danger">*</span></label>
+                    <label class="form-label fw-semibold mb-2">Keputusan <span class="text-danger">*</span></label>
                     <div class="decision-grid">
-                        @foreach(['APPROVE' => ['success','check-circle-fill','Setujui'],
-                                   'REJECT'  => ['danger', 'x-circle-fill',   'Tolak']] as $code => [$color, $icon, $label])
+                        @foreach(['APPROVE' => ['approve','check-circle-fill','Setujui'],
+                                   'REJECT'  => ['reject', 'x-circle-fill',   'Tolak']] as $code => [$variant, $icon, $label])
                             <input type="radio" class="btn-check" name="decision_code" value="{{ $code }}"
                                    id="dec_{{ $code }}" autocomplete="off"
                                    {{ old('decision_code') === $code ? 'checked' : '' }} required>
-                            <label class="btn btn-outline-{{ $color }}" for="dec_{{ $code }}">
-                                <i class="bi bi-{{ $icon }}"></i>
-                                <span>{{ $label }}</span>
+                            <label class="decision-opt opt-{{ $variant }}" for="dec_{{ $code }}">
+                                <i class="bi bi-{{ $icon }}"></i> {{ $label }}
                             </label>
                         @endforeach
                     </div>
@@ -164,25 +166,45 @@
 
                 {{-- 2. Catatan --}}
                 <div class="mb-3">
-                    <label class="form-label">Catatan <span class="text-danger" id="note-req" style="display:none">*</span></label>
-                    <textarea name="decision_note" id="decision_note" class="form-control" rows="4"
-                              placeholder="Wajib diisi jika menolak...">{{ old('decision_note') }}</textarea>
+                    <label class="form-label fw-semibold mb-1" for="decision_note">
+                        Catatan
+                        <span class="text-danger" id="note-req" style="display:none">*</span>
+                        <span class="fw-normal text-muted small" id="note-hint">(opsional)</span>
+                    </label>
+                    <textarea name="decision_note" id="decision_note" class="form-control" rows="3"
+                              placeholder="Tambahkan catatan untuk keputusan ini…">{{ old('decision_note') }}</textarea>
                 </div>
 
-                {{-- 3. Tombol --}}
-                <button class="btn btn-primary w-100">
-                    <i class="bi bi-send"></i> Kirim Keputusan
+                {{-- 3. Tombol (adaptif terhadap pilihan) --}}
+                <button type="submit" id="dec-submit" class="btn btn-secondary w-100" disabled>
+                    <i class="bi bi-hand-index"></i> Pilih keputusan dulu
                 </button>
             </form>
             <script>
             (function(){
                 var note = document.getElementById('decision_note');
                 var req  = document.getElementById('note-req');
+                var hint = document.getElementById('note-hint');
+                var btn  = document.getElementById('dec-submit');
+                var apr  = document.getElementById('dec_APPROVE');
                 var rej  = document.getElementById('dec_REJECT');
                 function sync(){
-                    var on = rej && rej.checked;
-                    if (note) note.required = !!on;
-                    if (req)  req.style.display = on ? '' : 'none';
+                    var approving = apr && apr.checked;
+                    var rejecting = rej && rej.checked;
+                    if (note) note.required      = !!rejecting;
+                    if (req)  req.style.display  = rejecting ? '' : 'none';
+                    if (hint) hint.style.display = rejecting ? 'none' : '';
+                    if (!btn) return;
+                    if (approving){
+                        btn.disabled = false; btn.className = 'btn btn-success w-100';
+                        btn.innerHTML = '<i class="bi bi-check-circle"></i> Setujui &amp; Kirim';
+                    } else if (rejecting){
+                        btn.disabled = false; btn.className = 'btn btn-danger w-100';
+                        btn.innerHTML = '<i class="bi bi-x-circle"></i> Tolak &amp; Kirim';
+                    } else {
+                        btn.disabled = true; btn.className = 'btn btn-secondary w-100';
+                        btn.innerHTML = '<i class="bi bi-hand-index"></i> Pilih keputusan dulu';
+                    }
                 }
                 document.querySelectorAll('input[name="decision_code"]').forEach(function(r){ r.addEventListener('change', sync); });
                 sync();
