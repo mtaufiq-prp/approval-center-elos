@@ -170,10 +170,12 @@ class InboxController extends Controller
 
         $validated = $request->validate([
             'decision_code' => ['required', 'in:APPROVE,REJECT,RETURN,CANCEL'],
-            'decision_note' => ['nullable', 'string', 'max:2000'],
+            'decision_note' => ['required_if:decision_code,REJECT', 'nullable', 'string', 'max:2000'],
             // edits = map "path" => "nilai-baru" (key bisa mengandung titik, mis. header.keterangan).
             // Whitelist & coercion tipe ditangani server di ApproverPayloadEditService.
             'edits'         => ['nullable', 'array'],
+        ], [
+            'decision_note.required_if' => 'Catatan wajib diisi saat menolak.',
         ]);
         $edits = $request->input('edits', []);
 

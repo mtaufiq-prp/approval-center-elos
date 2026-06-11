@@ -331,8 +331,9 @@ class AssigneeResolverService
     /**
      * Auto-provision (opsi A): pastikan user dengan user_ref=$npk ADA & aktif di
      * tbluser. Kalau belum ada, buat otomatis dari db_master.tbemployeeit
-     * (full_name dari master, role APPROVER, tanpa password → diaktifkan via
-     * SSO/reset). Membuat ORG_HEAD/JOBTITLE tidak pernah buntu karena approver
+     * (full_name dari master, role APPROVER, password default '123456' +
+     * must_change_password=1 → user bisa login lalu dipaksa ganti). Membuat
+     * ORG_HEAD/JOBTITLE tidak pernah buntu karena approver
      * belum ter-sync, dan tbluser selalu ikut HR master. Idempoten.
      */
     private function ensureUserByNpk(string $npk): ?TblUser
@@ -353,11 +354,15 @@ class AssigneeResolverService
             }
             $name = trim((string) ($emp[0]->employeename ?? '')) ?: $npk;
 
-            // Buat user minimal. password NULL = belum bisa login password (SSO/reset).
+            // Buat user minimal. Password default '123456' (cast 'hashed' auto-bcrypt)
+            // + must_change_password=1: user BISA login lalu DIPAKSA ganti password saat
+            // login pertama (bukan NULL yang bikin tak bisa login sama sekali).
             $user = new TblUser();
-            $user->user_ref  = $npk;
-            $user->full_name = $name;
-            $user->is_active = 1;
+            $user->user_ref             = $npk;
+            $user->full_name            = $name;
+            $user->is_active            = 1;
+            $user->password             = '123456';
+            $user->must_change_password = 1;
             $user->save();
 
             // Role APPROVER (lookup by code, hindari hardcode id).

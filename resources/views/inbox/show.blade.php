@@ -164,9 +164,9 @@
 
                 {{-- 2. Catatan --}}
                 <div class="mb-3">
-                    <label class="form-label">Catatan</label>
-                    <textarea name="decision_note" class="form-control" rows="4"
-                              placeholder="Wajib diisi jika menolak / mengembalikan...">{{ old('decision_note') }}</textarea>
+                    <label class="form-label">Catatan <span class="text-danger" id="note-req" style="display:none">*</span></label>
+                    <textarea name="decision_note" id="decision_note" class="form-control" rows="4"
+                              placeholder="Wajib diisi jika menolak...">{{ old('decision_note') }}</textarea>
                 </div>
 
                 {{-- 3. Tombol --}}
@@ -174,6 +174,20 @@
                     <i class="bi bi-send"></i> Kirim Keputusan
                 </button>
             </form>
+            <script>
+            (function(){
+                var note = document.getElementById('decision_note');
+                var req  = document.getElementById('note-req');
+                var rej  = document.getElementById('dec_REJECT');
+                function sync(){
+                    var on = rej && rej.checked;
+                    if (note) note.required = !!on;
+                    if (req)  req.style.display = on ? '' : 'none';
+                }
+                document.querySelectorAll('input[name="decision_code"]').forEach(function(r){ r.addEventListener('change', sync); });
+                sync();
+            })();
+            </script>
         @else
             {{-- Task sudah selesai → ringkasan keputusan --}}
             <div class="text-center mb-3">
